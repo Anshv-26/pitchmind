@@ -6,15 +6,27 @@ Thin CLI only: all feature logic lives in
 sidecar, and prints a concise report. Nothing under ``data/raw/`` or
 ``matches.parquet`` is ever written to.
 
-Two build modes, which write to *different* paths so a fold artifact can never
-silently replace the canonical one:
+Three build modes, each writing to a distinct path so one can never silently
+overwrite another:
 
-* no ``--estimate-through`` → ``data/processed/features.parquet``, the
-  **canonical** artifact, built with a-priori placeholder Elo parameters and
-  explicitly marked NOT VALID FOR MODEL EVALUATION.
+* no flags → ``data/processed/features.parquet``, the **canonical**
+  artifact, built with a-priori placeholder Elo parameters and explicitly
+  marked NOT VALID FOR MODEL EVALUATION.
+* ``--causal-through 2021_22`` → ``data/processed/features_causal_through_2021_22.parquet``,
+  the **normal mode for fold/final artifacts**. Builds the single canonical
+  causal Elo schedule (every season's parameters estimated only from strictly
+  earlier seasons — see ``build_causal_elo_schedule``), then writes only rows
+  through the training cutoff's paired evaluation season (e.g. 2021_22 ->
+  rows through 2022_23), so development artifacts structurally contain no
+  sealed-season (2025/26) rows. ``--causal-through`` must be one of
+  2021_22, 2022_23, 2023_24, 2024_25 (the last one produces the final
+  artifact, which legitimately includes 2025/26).
 * ``--estimate-through 2021_22`` → ``data/processed/features_through_2021_22.parquet``,
-  a **fold** artifact whose Elo parameters are estimated from that fold's
-  training window only.
+  the older **diagnostic** mode: a single ``EloParams`` object (fold-wide
+  estimation) applied across the whole matches frame. Kept for
+  backward-compatible/diagnostic use only — it is NOT causal at the parameter
+  level (see the module docstring in ``feature_engineering.py``) and should
+  not be used to build an artifact for model evaluation.
 
 ``--output`` overrides the path. An existing artifact whose provenance differs
 from the new build is never overwritten without ``--force``.
@@ -42,11 +54,15 @@ from backend.app.ml.feature_engineering import (  # noqa: E402
     DEFAULT_MIN_PERIODS,
     DEFAULT_REST_DAYS_CAP,
     FEATURE_COLUMNS,
+    INTENDED_TRAINING_CUTOFF,
     LINEAR_SAFE_FEATURE_COLUMNS,
     METADATA_COLUMNS,
+    MIN_PRIOR_SEASONS_FOR_ESTIMATION,
     SEALED_SEASON,
     TARGET_COLUMN,
+    EloParamSchedule,
     active_season_mean_elo,
+    build_causal_elo_schedule,
     build_features,
     build_provenance,
     canonical_elo_params,
@@ -71,11 +87,19 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def default_output_path(estimate_through: str | None) -> Path:
-    """Canonical and fold artifacts get distinct, non-colliding paths."""
+def default_output_path(
+    estimate_through: str | None = None, *, causal_through: str | None = None
+) -> Path:
+    """Canonical, causal-fold, and diagnostic-fold artifacts get distinct paths."""
+    if causal_through is not None:
+        return PROCESSED_DIR / f"features_causal_through_{causal_through}.parquet"
     if estimate_through is None:
         return CANONICAL_OUTPUT_PATH
     return PROCESSED_DIR / f"features_through_{estimate_through}.parquet"
+
+
+def season_order(matches: pd.DataFrame) -> list[str]:
+    return list(matches.groupby("Season")["Date"].min().sort_values().index)
 
 
 def refuse_incompatible_overwrite(output_path: Path, new_provenance: dict, force: bool) -> str | None:
@@ -90,11 +114,12 @@ def refuse_incompatible_overwrite(output_path: Path, new_provenance: dict, force
             f"{output_path} exists but its sidecar {sidecar} is unreadable. "
             f"Refusing to overwrite; pass --force to replace it."
         )
-    same_provenance = existing.get("estimated_from_seasons") == new_provenance[
-        "estimated_from_seasons"
-    ] and existing.get("valid_for_model_evaluation") == new_provenance[
-        "valid_for_model_evaluation"
-    ]
+    same_provenance = (
+        existing.get("estimated_from_seasons") == new_provenance["estimated_from_seasons"]
+        and existing.get("valid_for_model_evaluation")
+        == new_provenance["valid_for_model_evaluation"]
+        and existing.get("artifact_row_cap_season") == new_provenance.get("artifact_row_cap_season")
+    )
     if same_provenance:
         return None
     return (
@@ -110,13 +135,27 @@ def main(argv: list[str] | None = None) -> int:
         description="Build the pre-match feature dataset from matches.parquet"
     )
     parser.add_argument(
+        "--causal-through",
+        metavar="SEASON",
+        choices=sorted(set(INTENDED_TRAINING_CUTOFF.values())),
+        help=(
+            "Build the CAUSAL production artifact for the fold/final build "
+            "whose training cutoff is SEASON. Every season's rows are "
+            "generated with Elo parameters estimated only from strictly "
+            "earlier seasons; output rows are capped at this cutoff's paired "
+            "evaluation season, so development artifacts structurally "
+            "contain no sealed-season rows. This is the normal mode for "
+            "fold and final evaluation artifacts."
+        ),
+    )
+    parser.add_argument(
         "--estimate-through",
         metavar="SEASON",
         help=(
-            "Estimate Elo parameters from seasons up to and including SEASON "
-            "(a fold's training cutoff), and write a distinct fold artifact. "
-            "Omit to build the canonical artifact with a-priori placeholders, "
-            "which is NOT valid for evaluation."
+            "DIAGNOSTIC mode: estimate ONE fixed EloParams object from seasons "
+            "up to and including SEASON and apply it across the whole matches "
+            "frame. Not causal at the parameter level - do not use this to "
+            "build an artifact for model evaluation. Prefer --causal-through."
         ),
     )
     parser.add_argument(
@@ -132,6 +171,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    if args.causal_through and args.estimate_through:
+        print("FAILED: pass only one of --causal-through / --estimate-through")
+        return 1
+
     if not SOURCE_PATH.exists():
         print(f"FAILED: {SOURCE_PATH} not found (run scripts/process_data.py first)")
         return 1
@@ -139,35 +182,83 @@ def main(argv: list[str] | None = None) -> int:
     matches = pd.read_parquet(SOURCE_PATH)
     print(f"Loaded {len(matches)} matches from {SOURCE_PATH}")
 
-    if args.estimate_through:
+    row_cap_season: str | None = None
+
+    if args.causal_through:
+        row_cap_seasons = intended_evaluation_seasons_for(args.causal_through)
+        if not row_cap_seasons:
+            print(
+                f"FAILED: {args.causal_through!r} has no approved evaluation "
+                f"season in INTENDED_TRAINING_CUTOFF"
+            )
+            return 1
+        row_cap_season = row_cap_seasons[0]
+
         try:
-            elo_params = estimate_elo_params(matches, args.estimate_through)
+            schedule = build_causal_elo_schedule(matches)
+        except ValueError as exc:
+            print(f"FAILED: could not build the causal Elo schedule: {exc}")
+            return 1
+
+        print(f"Built causal Elo schedule ({len(schedule.seasons)} seasons, "
+              f"causal={schedule.is_causal()})")
+
+        full_features = build_features(matches, schedule)
+        order = season_order(matches)
+        seasons_to_keep = set(order[: order.index(row_cap_season) + 1])
+        features = full_features[full_features["Season"].isin(seasons_to_keep)].reset_index(
+            drop=True
+        )
+        expected_rows = int(matches["Season"].isin(seasons_to_keep).sum())
+
+        elo_config = schedule
+        intended = [row_cap_season]
+        purpose = (
+            f"Causal fold/evaluation artifact: training cutoff "
+            f"{args.causal_through}, row-capped at {row_cap_season}."
+        )
+        valid_for_evaluation = True
+        earliest_valid = row_cap_season
+        notes = (
+            f"Intended for evaluating {row_cap_season} only. Call "
+            f"assert_artifact_valid_for() before any fit or scoring."
+        )
+
+    elif args.estimate_through:
+        try:
+            elo_config = estimate_elo_params(matches, args.estimate_through)
         except ValueError as exc:
             print(f"FAILED: could not estimate Elo parameters: {exc}")
             return 1
         intended = intended_evaluation_seasons_for(args.estimate_through)
         purpose = (
-            f"Fold artifact: Elo parameters estimated from seasons through "
+            f"DIAGNOSTIC fold-wide artifact (not causal at the parameter "
+            f"level): Elo parameters estimated from seasons through "
             f"{args.estimate_through}."
         )
         valid_for_evaluation = True
         earliest_valid = _next_season(matches, args.estimate_through)
         notes = (
             f"Intended for evaluating {intended or '(no approved fold)'} only. "
-            f"Call assert_artifact_valid_for() before any fit or scoring."
+            f"Fold-wide estimation, not causal at the parameter level - prefer "
+            f"--causal-through for real evaluation. Call "
+            f"assert_artifact_valid_for() before any fit or scoring."
         )
+        features = build_features(matches, elo_config)
+        expected_rows = len(matches)
+
     else:
-        elo_params = canonical_elo_params()
+        elo_config = canonical_elo_params()
         intended = []
         purpose = CANONICAL_PURPOSE
         valid_for_evaluation = False
         earliest_valid = None
         notes = CANONICAL_NOT_VALID_NOTE
-
-    features = build_features(matches, elo_params)
+        features = build_features(matches, elo_config)
+        expected_rows = len(matches)
 
     problems = validate_feature_frame(
-        features, expected_rows=len(matches), initial_rating=elo_params.initial_rating
+        features, expected_rows=expected_rows, initial_rating=elo_config.initial_rating
     )
     if problems:
         print()
@@ -179,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     provenance = build_provenance(
-        elo_params=elo_params,
+        elo_params=elo_config,
         ewma_halflife=DEFAULT_EWMA_HALFLIFE,
         min_periods=DEFAULT_MIN_PERIODS,
         efficiency_window=DEFAULT_EFFICIENCY_WINDOW,
@@ -191,11 +282,15 @@ def main(argv: list[str] | None = None) -> int:
         valid_for_evaluation=valid_for_evaluation,
         earliest_valid_evaluation_season=earliest_valid,
         intended_evaluation_seasons=intended,
+        artifact_row_cap_season=row_cap_season,
+        min_prior_seasons_for_estimation=(
+            MIN_PRIOR_SEASONS_FOR_ESTIMATION if args.causal_through else None
+        ),
         notes=notes,
     )
 
     output_path = args.output if args.output is not None else default_output_path(
-        args.estimate_through
+        args.estimate_through, causal_through=args.causal_through
     )
     refusal = refuse_incompatible_overwrite(output_path, provenance, args.force)
     if refusal:
@@ -208,12 +303,14 @@ def main(argv: list[str] | None = None) -> int:
     sidecar = sidecar_path_for(output_path)
     sidecar.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
 
-    _print_report(features, elo_params, output_path, sidecar, valid_for_evaluation, intended)
+    _print_report(
+        features, elo_config, output_path, sidecar, valid_for_evaluation, intended, row_cap_season
+    )
     return 0
 
 
 def _next_season(matches: pd.DataFrame, season: str) -> str | None:
-    order = list(matches.groupby("Season")["Date"].min().sort_values().index)
+    order = season_order(matches)
     if season not in order:
         return None
     index = order.index(season) + 1
@@ -222,11 +319,12 @@ def _next_season(matches: pd.DataFrame, season: str) -> str | None:
 
 def _print_report(
     features: pd.DataFrame,
-    elo_params,
+    elo_config,
     output_path: Path,
     sidecar: Path,
     valid_for_evaluation: bool,
     intended: list[str],
+    row_cap_season: str | None,
 ) -> None:
     print()
     print(f"Rows:     {len(features)}")
@@ -238,27 +336,37 @@ def _print_report(
     print(f"Seasons:  {features['Season'].nunique()}  "
           f"({features['Season'].min()} -> {features['Season'].max()})")
     print(f"Dates:    {features['Date'].min().date()} -> {features['Date'].max().date()}")
+    if row_cap_season is not None:
+        print(f"Row cap:  {row_cap_season} (no rows beyond this season)")
 
     print()
-    print("Elo parameters used:")
-    for key, value in elo_params_to_dict(elo_params).items():
-        print(f"  {key}: {value}")
+    if isinstance(elo_config, EloParamSchedule):
+        print(f"Elo schedule ({len(elo_config.seasons)} seasons, causal={elo_config.is_causal()}):")
+        for season in elo_config.seasons:
+            p = elo_config.params_for(season)
+            source = f"estimated<={p.training_cutoff}" if p.is_estimated else "a-priori"
+            print(
+                f"  {season}: {source:<16} ha={p.home_advantage:6.2f}  "
+                f"shrink={p.season_shrink:.3f}  delta={p.promoted_prior_delta:7.2f}"
+            )
+    else:
+        print("Elo parameters used (diagnostic, fold-wide, NOT causal per-row):")
+        for key, value in elo_params_to_dict(elo_config).items():
+            print(f"  {key}: {value}")
 
     print()
     if valid_for_evaluation:
         print(f"Artifact status: VALID for evaluating {intended or '(no approved fold)'}")
-        print(f"  training cutoff: {elo_params.training_cutoff}")
     else:
         print("Artifact status: *** NOT VALID FOR MODEL EVALUATION ***")
         print("  Built with a-priori placeholder Elo parameters (no provenance).")
-        print("  Use --estimate-through <fold train cutoff> to build a fold artifact.")
+        print("  Use --causal-through <fold train cutoff> to build a fold artifact.")
 
     print()
     cold = cold_start_row_count(features)
     print(f"Cold-start rows retained (either side < min history): {cold} ({cold / len(features):.2%})")
-    print(f"Sealed season present in artifact: {SEALED_SEASON} "
-          f"({int((features['Season'] == SEALED_SEASON).sum())} rows) - "
-          f"never used for parameter estimation")
+    sealed_rows = int((features["Season"] == SEALED_SEASON).sum())
+    print(f"Sealed season present in artifact: {SEALED_SEASON} ({sealed_rows} rows)")
 
     print()
     print("Feature NaN counts (non-zero only):")

@@ -35,6 +35,7 @@ from backend.app.ml.feature_engineering import (  # noqa: E402
     INTENDED_TRAINING_CUTOFF,
     LINEAR_SAFE_FEATURE_COLUMNS,
     METADATA_COLUMNS,
+    MIN_PRIOR_SEASONS_FOR_ESTIMATION,
     NON_NULLABLE_FEATURE_COLUMNS,
     OUTPUT_COLUMNS,
     RESULT_COLUMN,
@@ -42,18 +43,22 @@ from backend.app.ml.feature_engineering import (  # noqa: E402
     TARGET_COLUMN,
     TARGET_MAPPING,
     EloParams,
+    EloParamSchedule,
     active_season_mean_elo,
     assert_artifact_valid_for,
     assert_intended_fold_pairing,
     assert_params_precede,
+    build_causal_elo_schedule,
     build_features,
     build_provenance,
     canonical_elo_params,
     elo_params_from_dict,
     elo_params_to_dict,
+    elo_schedule_from_list,
     estimate_elo_params,
     intended_evaluation_seasons_for,
     load_artifact_params,
+    load_elo_schedule,
     load_provenance,
     sidecar_path_for,
     validate_feature_frame,
@@ -107,6 +112,11 @@ def make_params(**overrides) -> EloParams:
 def estimate_synthetic(matches: pd.DataFrame, through: str) -> EloParams:
     """Estimate on a synthetic league, whose history starts at 2019_20."""
     return estimate_elo_params(matches, through, expected_start_season=SYNTHETIC_START)
+
+
+def build_synthetic_schedule(matches: pd.DataFrame, **kwargs) -> EloParamSchedule:
+    """Causal schedule on a synthetic league, whose history starts at 2019_20."""
+    return build_causal_elo_schedule(matches, expected_start_season=SYNTHETIC_START, **kwargs)
 
 
 def row_on(features: pd.DataFrame, home: str, date: str) -> pd.Series:
@@ -1054,6 +1064,16 @@ def real_features(real_matches, real_params) -> pd.DataFrame:
     return build_features(real_matches, real_params)
 
 
+@pytest.fixture(scope="module")
+def real_causal_schedule(real_matches) -> EloParamSchedule:
+    return build_causal_elo_schedule(real_matches)
+
+
+@pytest.fixture(scope="module")
+def real_causal_features(real_matches, real_causal_schedule) -> pd.DataFrame:
+    return build_features(real_matches, real_causal_schedule)
+
+
 @requires_real_data
 def test_real_data_shape_and_validation(real_matches, real_features):
     assert len(real_features) == len(real_matches) == 4180
@@ -1151,3 +1171,564 @@ def test_real_data_sealed_season_never_enters_estimation(real_matches):
         params = estimate_elo_params(real_matches, cutoff)
         assert SEALED_SEASON not in params.estimated_from_seasons
         assert params.training_cutoff == cutoff
+
+
+# ==========================================================================
+# CAUSAL ELO PARAMETER SCHEDULE
+#
+# The block above (build_features / estimate_elo_params / assert_params_precede)
+# guards against a fold-WIDE EloParams object leaking a fold's own validation
+# season into training features. This block guards against a narrower but
+# equally real leak: even a single fold-wide EloParams estimated correctly
+# "through 2021_22" is itself estimated from outcomes spanning 2015_16-2021_22,
+# so applying it uniformly to every training row would let a 2015_16 row's
+# features depend on a parameter partly computed from that row's own result
+# (and every other training row's). EloParamSchedule fixes this by giving each
+# season its OWN parameters, estimated only from strictly earlier seasons.
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# 21. EloParamSchedule construction invariants
+# --------------------------------------------------------------------------
+def test_elo_param_schedule_rejects_an_entry_estimated_from_its_own_season():
+    bad = {
+        "2019_20": canonical_elo_params(),
+        "2020_21": EloParams(1.0, 0.8, -100.0, estimated_from_seasons=("2020_21",)),
+    }
+    with pytest.raises(ValueError, match="not causal"):
+        EloParamSchedule(bad)
+
+
+def test_elo_param_schedule_rejects_an_entry_estimated_from_a_later_season():
+    bad = {
+        "2019_20": canonical_elo_params(),
+        "2020_21": EloParams(1.0, 0.8, -100.0, estimated_from_seasons=("2019_20", "2021_22")),
+    }
+    with pytest.raises(ValueError, match="not causal"):
+        EloParamSchedule(bad)
+
+
+def test_elo_param_schedule_rejects_estimation_from_the_sealed_season():
+    bad = {
+        "2019_20": canonical_elo_params(),
+        "2026_27": EloParams(1.0, 0.8, -100.0, estimated_from_seasons=("2019_20", SEALED_SEASON)),
+    }
+    with pytest.raises(ValueError, match="sealed season"):
+        EloParamSchedule(bad)
+
+
+def test_elo_param_schedule_requires_constant_initial_rating():
+    with pytest.raises(ValueError, match="initial_rating"):
+        EloParamSchedule({
+            "2019_20": EloParams(0.0, 1.0, 0.0, initial_rating=1500.0),
+            "2020_21": EloParams(
+                0.0, 1.0, 0.0, initial_rating=1600.0, estimated_from_seasons=("2019_20",)
+            ),
+        })
+
+
+def test_elo_param_schedule_requires_constant_k_factor():
+    with pytest.raises(ValueError, match="k_factor"):
+        EloParamSchedule({
+            "2019_20": EloParams(0.0, 1.0, 0.0, k_factor=20.0),
+            "2020_21": EloParams(
+                0.0, 1.0, 0.0, k_factor=30.0, estimated_from_seasons=("2019_20",)
+            ),
+        })
+
+
+def test_elo_param_schedule_rejects_empty_entries():
+    with pytest.raises(ValueError, match="at least one season"):
+        EloParamSchedule({})
+
+
+def test_elo_param_schedule_is_causal_reflects_construction_guarantee():
+    schedule = build_synthetic_schedule(build_synthetic_league())
+    assert schedule.is_causal() is True
+
+
+# --------------------------------------------------------------------------
+# 22. build_causal_elo_schedule: policy, reuse, and the a-priori fallback
+# --------------------------------------------------------------------------
+def test_causal_schedule_every_entry_obeys_strict_ordering():
+    schedule = build_synthetic_schedule(build_synthetic_league())
+    assert schedule.is_causal()
+    for season in schedule.seasons:
+        params = schedule.params_for(season)
+        if params.is_estimated:
+            assert all(source < season for source in params.estimated_from_seasons), (
+                f"{season}'s estimation sources {params.estimated_from_seasons} "
+                f"are not all strictly earlier"
+            )
+        else:
+            assert params.estimated_from_seasons == ()
+
+
+def test_apriori_fallback_applies_below_the_min_prior_seasons_threshold():
+    schedule = build_synthetic_schedule(build_synthetic_league())
+    order = schedule.seasons
+    assert len(order) > MIN_PRIOR_SEASONS_FOR_ESTIMATION  # fixture must exercise both regimes
+    for season in order[:MIN_PRIOR_SEASONS_FOR_ESTIMATION]:
+        assert not schedule.params_for(season).is_estimated, f"{season} should be a-priori"
+    for season in order[MIN_PRIOR_SEASONS_FOR_ESTIMATION:]:
+        assert schedule.params_for(season).is_estimated, f"{season} should be estimated"
+
+
+def test_build_causal_elo_schedule_reuses_estimate_elo_params_verbatim():
+    """No duplicated formulas: every estimated entry must equal calling
+    estimate_elo_params directly with the same cutoff."""
+    matches = build_synthetic_league()
+    schedule = build_synthetic_schedule(matches)
+    order = schedule.seasons
+    for season in order[MIN_PRIOR_SEASONS_FOR_ESTIMATION:]:
+        cutoff = order[order.index(season) - 1]
+        direct = estimate_synthetic(matches, cutoff)
+        assert schedule.params_for(season) == direct
+
+
+def test_causal_schedule_rejects_apriori_override_carrying_provenance():
+    with pytest.raises(ValueError, match="empty estimation provenance"):
+        build_synthetic_schedule(
+            build_synthetic_league(),
+            apriori=estimate_synthetic(build_synthetic_league(), "2021_22"),
+        )
+
+
+# --------------------------------------------------------------------------
+# 23. Outcome-parameter isolation (item 7.2): a season's own results must
+# never inform its own (or an earlier season's) Elo parameters.
+# --------------------------------------------------------------------------
+def test_mutating_an_outcome_only_changes_later_schedule_entries():
+    matches = build_synthetic_league()
+    baseline = build_synthetic_schedule(matches)
+
+    target_season = "2022_23"  # the first season with an ESTIMATED entry
+    assert baseline.params_for(target_season).is_estimated
+
+    mutated = matches.copy()
+    idx = mutated.index[
+        (mutated["Season"] == target_season) & (mutated["FTHG"] != mutated["FTAG"])
+    ][0]
+    fthg, ftag = mutated.loc[idx, "FTHG"], mutated.loc[idx, "FTAG"]
+    mutated.loc[idx, ["FTHG", "FTAG"]] = [ftag, fthg]
+    mutated.loc[idx, "FTR"] = "H" if ftag > fthg else ("A" if ftag < fthg else "D")
+
+    changed = build_synthetic_schedule(mutated)
+
+    order = baseline.seasons
+    mutation_position = order.index(target_season)
+
+    # The mutated season's OWN entry, and every earlier entry, must be
+    # completely unaffected.
+    for season in order[: mutation_position + 1]:
+        assert baseline.params_for(season) == changed.params_for(season), (
+            f"{season}'s Elo parameters changed after mutating a result in "
+            f"{target_season} - a season's own outcomes must never inform its "
+            f"own (or an earlier season's) parameters"
+        )
+
+    # Anti-vacuity: a later season's cumulative estimation window DOES include
+    # the mutated match, so at least one later entry must change.
+    later_seasons = order[mutation_position + 1:]
+    assert later_seasons, "fixture must include at least one season after the mutation"
+    assert any(
+        baseline.params_for(season) != changed.params_for(season) for season in later_seasons
+    ), "expected at least one later schedule entry to change"
+
+
+# --------------------------------------------------------------------------
+# 24. Full future-shuffle invariance for the schedule AND the feature matrix
+# (item 7.3).
+# --------------------------------------------------------------------------
+def test_future_shuffle_with_schedule_rebuild_preserves_past_rows():
+    matches = build_synthetic_league()
+    boundary_season = "2021_22"
+    boundary_date = matches.loc[matches["Season"] == boundary_season, "Date"].max()
+
+    baseline_schedule = build_synthetic_schedule(matches)
+    baseline_features = build_features(matches, baseline_schedule)
+
+    shuffled = matches.copy()
+    future_index = shuffled.index[shuffled["Date"] > boundary_date].to_numpy()
+    permuted = np.random.default_rng(0).permutation(future_index)
+    outcome_columns = ["FTHG", "FTAG", "FTR", "HS", "AS", "HST", "AST"]
+    shuffled.loc[future_index, outcome_columns] = matches.loc[permuted, outcome_columns].to_numpy()
+
+    shuffled_schedule = build_synthetic_schedule(shuffled)
+    shuffled_features = build_features(shuffled, shuffled_schedule)
+
+    order = baseline_schedule.seasons
+    for season in [s for s in order if s <= boundary_season]:
+        assert baseline_schedule.params_for(season) == shuffled_schedule.params_for(season)
+
+    before = baseline_features[baseline_features["Date"] <= boundary_date][FEATURE_COLUMNS]
+    after = shuffled_features[shuffled_features["Date"] <= boundary_date][FEATURE_COLUMNS]
+    pdt.assert_frame_equal(before.reset_index(drop=True), after.reset_index(drop=True))
+
+    # Anti-vacuity: rows strictly after the boundary should generally differ.
+    later_before = baseline_features[baseline_features["Date"] > boundary_date][FEATURE_COLUMNS]
+    later_after = shuffled_features[shuffled_features["Date"] > boundary_date][FEATURE_COLUMNS]
+    assert not later_before.reset_index(drop=True).equals(later_after.reset_index(drop=True))
+
+
+# --------------------------------------------------------------------------
+# 25. Cross-artifact consistency (item 7.4): independently-built causal fold
+# artifacts must agree on every row they share.
+# --------------------------------------------------------------------------
+def test_causal_fold_artifacts_agree_on_shared_rows():
+    matches = build_synthetic_league()
+
+    def build_capped(cap_season: str) -> pd.DataFrame:
+        schedule = build_synthetic_schedule(matches)  # independently rebuilt
+        full = build_features(matches, schedule)
+        order = schedule.seasons
+        keep = set(order[: order.index(cap_season) + 1])
+        return full[full["Season"].isin(keep)].reset_index(drop=True)
+
+    order = build_synthetic_schedule(matches).seasons
+    cap_a, cap_b = order[2], order[4]
+    assert cap_a < cap_b
+
+    artifact_a = build_capped(cap_a)
+    artifact_b = build_capped(cap_b)
+
+    shared_seasons = set(order[: order.index(cap_a) + 1])
+    shared_a = artifact_a[artifact_a["Season"].isin(shared_seasons)].reset_index(drop=True)
+    shared_b = artifact_b[artifact_b["Season"].isin(shared_seasons)].reset_index(drop=True)
+    pdt.assert_frame_equal(shared_a, shared_b)
+
+
+# --------------------------------------------------------------------------
+# 26. Provenance shape for causal (schedule) vs diagnostic (single-EloParams)
+# artifacts.
+# --------------------------------------------------------------------------
+def test_build_provenance_schedule_shape_includes_elo_schedule_list():
+    matches = build_synthetic_league()
+    schedule = build_synthetic_schedule(matches)
+    provenance = build_provenance(
+        elo_params=schedule,
+        ewma_halflife=DEFAULT_EWMA_HALFLIFE,
+        min_periods=DEFAULT_MIN_PERIODS,
+        efficiency_window=10,
+        rest_days_cap=21,
+        source_path="x",
+        source_sha256="y",
+        n_rows=100,
+        purpose="causal",
+        valid_for_evaluation=True,
+        intended_evaluation_seasons=["2022_23"],
+        artifact_row_cap_season="2022_23",
+        notes="",
+    )
+    assert provenance["schedule_is_causal"] is True
+    assert provenance["artifact_row_cap_season"] == "2022_23"
+    assert provenance["min_prior_seasons_for_estimation"] == MIN_PRIOR_SEASONS_FOR_ESTIMATION
+    assert len(provenance["elo_schedule"]) == len(schedule.seasons)
+
+    governing = schedule.seasons[-1]
+    governing_params = schedule.params_for(governing)
+    assert provenance["training_cutoff"] == governing_params.training_cutoff
+    assert provenance["estimated_from_seasons"] == list(governing_params.estimated_from_seasons)
+
+    payload = json.loads(json.dumps(provenance))
+    restored = elo_schedule_from_list(payload["elo_schedule"])
+    for season in schedule.seasons:
+        assert restored.params_for(season) == schedule.params_for(season)
+
+
+def test_build_provenance_diagnostic_shape_unchanged_by_schedule_support():
+    params = make_params()
+    provenance = build_provenance(
+        elo_params=params,
+        ewma_halflife=DEFAULT_EWMA_HALFLIFE,
+        min_periods=DEFAULT_MIN_PERIODS,
+        efficiency_window=10,
+        rest_days_cap=21,
+        source_path="x",
+        source_sha256="y",
+        n_rows=100,
+        purpose="diagnostic",
+        valid_for_evaluation=True,
+        notes="",
+    )
+    assert provenance["schedule_is_causal"] is None
+    assert "elo_schedule" not in provenance
+    assert provenance["artifact_row_cap_season"] is None
+    assert provenance["elo_params"] == elo_params_to_dict(params)
+
+
+# --------------------------------------------------------------------------
+# 27. Artifact validation for causal (schedule-based) artifacts (item 5).
+# --------------------------------------------------------------------------
+def _write_causal_artifact(
+    tmp_path: Path,
+    matches: pd.DataFrame,
+    schedule: EloParamSchedule,
+    *,
+    row_cap_season: str,
+    valid: bool = True,
+    name: str = "causal.parquet",
+) -> Path:
+    order = list(matches.groupby("Season")["Date"].min().sort_values().index)
+    full_features = build_features(matches, schedule)
+    keep = set(order[: order.index(row_cap_season) + 1])
+    features = full_features[full_features["Season"].isin(keep)].reset_index(drop=True)
+    path = tmp_path / name
+    features.to_parquet(path, index=False)
+    provenance = build_provenance(
+        elo_params=schedule,
+        ewma_halflife=DEFAULT_EWMA_HALFLIFE,
+        min_periods=DEFAULT_MIN_PERIODS,
+        efficiency_window=10,
+        rest_days_cap=21,
+        source_path="synthetic",
+        source_sha256="deadbeef",
+        n_rows=len(features),
+        purpose="test causal artifact",
+        valid_for_evaluation=valid,
+        intended_evaluation_seasons=[row_cap_season],
+        artifact_row_cap_season=row_cap_season,
+        notes="",
+    )
+    sidecar_path_for(path).write_text(json.dumps(provenance, indent=2))
+    return path
+
+
+def test_causal_artifact_validates_with_pairing_disabled(tmp_path):
+    matches = build_synthetic_league()
+    schedule = build_synthetic_schedule(matches)
+    path = _write_causal_artifact(tmp_path, matches, schedule, row_cap_season="2022_23")
+
+    result = assert_artifact_valid_for(path, ["2022_23"], require_intended_pairing=False)
+
+    assert isinstance(result, EloParamSchedule)
+    assert result.params_for("2022_23") == schedule.params_for("2022_23")
+
+
+def test_causal_artifact_rejects_row_beyond_declared_cap(tmp_path):
+    matches = build_synthetic_league()
+    schedule = build_synthetic_schedule(matches)
+    features = build_features(matches, schedule)  # full 6 seasons, deliberately NOT capped
+    path = tmp_path / "uncapped.parquet"
+    features.to_parquet(path, index=False)
+    provenance = build_provenance(
+        elo_params=schedule,
+        ewma_halflife=DEFAULT_EWMA_HALFLIFE,
+        min_periods=DEFAULT_MIN_PERIODS,
+        efficiency_window=10,
+        rest_days_cap=21,
+        source_path="x",
+        source_sha256="y",
+        n_rows=len(features),
+        purpose="bad cap",
+        valid_for_evaluation=True,
+        intended_evaluation_seasons=["2022_23"],
+        artifact_row_cap_season="2022_23",
+        notes="",
+    )
+    sidecar_path_for(path).write_text(json.dumps(provenance, indent=2))
+
+    with pytest.raises(ValueError, match="beyond it"):
+        assert_artifact_valid_for(path, ["2022_23"], require_intended_pairing=False)
+
+
+def test_causal_artifact_rejects_when_not_marked_evaluable(tmp_path):
+    matches = build_synthetic_league()
+    schedule = build_synthetic_schedule(matches)
+    path = _write_causal_artifact(
+        tmp_path, matches, schedule, row_cap_season="2022_23", valid=False
+    )
+    with pytest.raises(ValueError, match="not valid for model evaluation"):
+        assert_artifact_valid_for(path, ["2022_23"], require_intended_pairing=False)
+
+
+def test_causal_artifact_rejects_a_tampered_non_causal_schedule(tmp_path):
+    matches = build_synthetic_league()
+    schedule = build_synthetic_schedule(matches)
+    path = _write_causal_artifact(tmp_path, matches, schedule, row_cap_season="2022_23")
+
+    payload = json.loads(sidecar_path_for(path).read_text())
+    for entry in payload["elo_schedule"]:
+        if entry["season"] == "2022_23":
+            entry["estimated_from_seasons"] = ["2019_20", "2022_23"]
+            entry["params"]["estimated_from_seasons"] = ["2019_20", "2022_23"]
+    sidecar_path_for(path).write_text(json.dumps(payload))
+
+    with pytest.raises(ValueError, match="not causal"):
+        assert_artifact_valid_for(path, ["2022_23"], require_intended_pairing=False)
+
+
+def test_causal_artifact_valid_for_rejects_mispaired_entry_when_pairing_required(tmp_path):
+    """A schedule entry can be causal (strictly earlier) yet still not the
+    INTENDED cutoff. This is what assert_intended_fold_pairing guards against
+    for a causal artifact: not row content, but a wrong parameter choice
+    within an otherwise-valid schedule."""
+    mispaired = EloParamSchedule({
+        "2015_16": canonical_elo_params(),
+        "2019_20": EloParams(1.0, 0.8, -100.0, estimated_from_seasons=("2015_16",)),
+        "2022_23": EloParams(2.0, 0.8, -100.0, estimated_from_seasons=("2015_16", "2019_20")),
+    })
+    features = build_features(
+        make_matches([
+            {"season": "2015_16", "date": "2015-08-08", "home": "A", "away": "B", "fthg": 1, "ftag": 0},
+            {"season": "2019_20", "date": "2019-08-08", "home": "A", "away": "B", "fthg": 1, "ftag": 0},
+            {"season": "2022_23", "date": "2022-08-08", "home": "A", "away": "B", "fthg": 1, "ftag": 0},
+        ]),
+        mispaired,
+    )
+    path = tmp_path / "mispaired.parquet"
+    features.to_parquet(path, index=False)
+    provenance = build_provenance(
+        elo_params=mispaired,
+        ewma_halflife=DEFAULT_EWMA_HALFLIFE,
+        min_periods=DEFAULT_MIN_PERIODS,
+        efficiency_window=10,
+        rest_days_cap=21,
+        source_path="x",
+        source_sha256="y",
+        n_rows=len(features),
+        purpose="mispaired",
+        valid_for_evaluation=True,
+        intended_evaluation_seasons=["2022_23"],
+        artifact_row_cap_season="2022_23",
+        notes="",
+    )
+    sidecar_path_for(path).write_text(json.dumps(provenance, indent=2))
+
+    with pytest.raises(ValueError, match="must be scored with parameters"):
+        assert_artifact_valid_for(path, ["2022_23"])
+    assert_artifact_valid_for(path, ["2022_23"], require_intended_pairing=False)  # temporal-only
+
+
+def test_load_elo_schedule_round_trips_from_disk(tmp_path):
+    matches = build_synthetic_league()
+    schedule = build_synthetic_schedule(matches)
+    path = _write_causal_artifact(tmp_path, matches, schedule, row_cap_season="2022_23")
+
+    restored = load_elo_schedule(path)
+    for season in schedule.seasons:
+        assert restored.params_for(season) == schedule.params_for(season)
+
+
+def test_load_elo_schedule_rejects_a_diagnostic_artifact(tmp_path):
+    path = _write_artifact(tmp_path, make_params(), valid=True)
+    with pytest.raises(ValueError, match="single-EloParams diagnostic mode"):
+        load_elo_schedule(path)
+
+
+@requires_real_data
+def test_causal_artifact_row_cap_prevents_using_a_smaller_artifact_for_a_later_season(
+    tmp_path, real_matches, real_causal_schedule, real_causal_features
+):
+    """The universal causal schedule always has a correctly-paired entry for
+    every season (that is what causal construction guarantees), so what
+    actually stops a Fold-1-sized file from being (mis)used to evaluate a
+    later season is that the file's rows do not reach that far - not a
+    pairing mismatch on the schedule itself."""
+    order = list(real_matches.groupby("Season")["Date"].min().sort_values().index)
+    keep = set(order[: order.index("2022_23") + 1])
+    fold_one_features = real_causal_features[real_causal_features["Season"].isin(keep)].reset_index(
+        drop=True
+    )
+    path = tmp_path / "fold_one.parquet"
+    fold_one_features.to_parquet(path, index=False)
+    provenance = build_provenance(
+        elo_params=real_causal_schedule,
+        ewma_halflife=DEFAULT_EWMA_HALFLIFE,
+        min_periods=DEFAULT_MIN_PERIODS,
+        efficiency_window=10,
+        rest_days_cap=21,
+        source_path="x",
+        source_sha256="y",
+        n_rows=len(fold_one_features),
+        purpose="fold one",
+        valid_for_evaluation=True,
+        intended_evaluation_seasons=["2022_23"],
+        artifact_row_cap_season="2022_23",
+        notes="",
+    )
+    sidecar_path_for(path).write_text(json.dumps(provenance, indent=2))
+
+    assert_artifact_valid_for(path, ["2022_23"])  # correct usage passes
+
+    with pytest.raises(ValueError, match="does not contain evaluation season"):
+        assert_artifact_valid_for(path, ["2024_25"])
+
+
+# --------------------------------------------------------------------------
+# 28. A-priori regime and validation-season pairing on REAL data (items
+# 7.5, 7.6, 7.7).
+# --------------------------------------------------------------------------
+@requires_real_data
+def test_real_data_early_seasons_use_apriori_parameters(real_causal_schedule):
+    apriori = canonical_elo_params()
+    for season in ["2015_16", "2016_17", "2017_18"]:
+        params = real_causal_schedule.params_for(season)
+        assert not params.is_estimated, f"{season} should be a-priori"
+        assert params.estimated_from_seasons == ()
+        assert params.home_advantage == apriori.home_advantage
+        assert params.season_shrink == apriori.season_shrink
+        assert params.promoted_prior_delta == apriori.promoted_prior_delta
+
+
+@requires_real_data
+def test_real_data_causal_schedule_matches_the_approved_pairing(real_causal_schedule):
+    for evaluation_season, expected_cutoff in INTENDED_TRAINING_CUTOFF.items():
+        params = real_causal_schedule.params_for(evaluation_season)
+        assert params.is_estimated
+        assert params.training_cutoff == expected_cutoff
+
+
+@requires_real_data
+def test_real_data_causal_schedule_never_estimates_from_the_sealed_season(real_causal_schedule):
+    for season in real_causal_schedule.seasons:
+        assert SEALED_SEASON not in real_causal_schedule.params_for(season).estimated_from_seasons
+
+
+@requires_real_data
+def test_real_data_causal_schedule_reproduces_verified_elo_estimates(real_causal_schedule):
+    """Regression pin against the manually-verified figures from the audit
+    that motivated this causal-schedule revision."""
+    expected = {
+        "2022_23": (41.735, 0.832, -103.533),
+        "2023_24": (45.168, 0.809, -97.386),
+        "2024_25": (45.465, 0.802, -110.224),
+        "2025_26": (43.008, 0.758, -122.320),
+    }
+    for season, (home_advantage, season_shrink, promoted_prior_delta) in expected.items():
+        params = real_causal_schedule.params_for(season)
+        assert params.home_advantage == pytest.approx(home_advantage, abs=1e-2)
+        assert params.season_shrink == pytest.approx(season_shrink, abs=1e-2)
+        assert params.promoted_prior_delta == pytest.approx(promoted_prior_delta, abs=1e-2)
+
+
+@requires_real_data
+def test_real_data_causal_and_fold_wide_estimates_differ(real_matches, real_causal_schedule):
+    """Anti-vacuity: the causal schedule's per-season parameters must
+    actually differ from naive fold-wide estimation - otherwise the causal
+    fix would be a no-op in practice, not just in principle."""
+    fold_wide = estimate_elo_params(real_matches, "2021_22")
+    causal_2021_22 = real_causal_schedule.params_for("2021_22")
+    assert fold_wide != causal_2021_22
+    assert fold_wide.home_advantage != pytest.approx(causal_2021_22.home_advantage)
+
+
+@requires_real_data
+def test_real_data_row_capped_dev_artifacts_contain_no_sealed_rows(
+    real_matches, real_causal_features
+):
+    order = list(real_matches.groupby("Season")["Date"].min().sort_values().index)
+    for training_cutoff, eval_season in [
+        ("2021_22", "2022_23"), ("2022_23", "2023_24"), ("2023_24", "2024_25"),
+    ]:
+        keep = set(order[: order.index(eval_season) + 1])
+        capped = real_causal_features[real_causal_features["Season"].isin(keep)]
+        present = set(capped["Season"].unique())
+        assert SEALED_SEASON not in present, f"training cutoff {training_cutoff} artifact leaks the sealed season"
+        assert eval_season in present
+
+
+@requires_real_data
+def test_real_data_causal_features_pass_validation(real_matches, real_causal_features):
+    assert len(real_causal_features) == len(real_matches) == 4180
+    assert validate_feature_frame(real_causal_features, expected_rows=len(real_matches)) == []
