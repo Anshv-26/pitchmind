@@ -1,0 +1,54 @@
+{
+  "development_folds": [
+    1,
+    2,
+    3
+  ],
+  "library_versions": {
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "platform": "macOS-15.6-arm64-arm-64bit-Mach-O",
+    "python": "3.13.5",
+    "scipy": "1.18.1"
+  },
+  "results": [
+    {
+      "config_id": "poisson",
+      "log_loss_std": 0.051144552554510475,
+      "mean_log_loss": 1.0147562486079673,
+      "worst_log_loss": 1.0661423304671487
+    },
+    {
+      "config_id": "poisson_l2",
+      "log_loss_std": 0.04891990620901267,
+      "mean_log_loss": 1.0130477559539317,
+      "worst_log_loss": 1.0639519040529142
+    },
+    {
+      "config_id": "dixon_coles",
+      "log_loss_std": 0.050912259800946935,
+      "mean_log_loss": 1.0156436591373035,
+      "worst_log_loss": 1.066378250356647
+    },
+    {
+      "config_id": "dixon_coles_l2",
+      "log_loss_std": 0.04867184334947512,
+      "mean_log_loss": 1.0138906418075717,
+      "worst_log_loss": 1.0641824665269881
+    },
+    {
+      "config_id": "dixon_coles_l2_decay",
+      "log_loss_std": 0.03340043031334529,
+      "mean_log_loss": 0.9921239920712402,
+      "worst_log_loss": 1.0172244848542995
+    }
+  ],
+  "sealed_season": "2025_26",
+  "sealed_season_scored": false,
+  "selected_configuration": "dixon_coles_l2_decay",
+  "selection_rule": "lowest mean development log loss; ties (|paired mean diff| < 2*SE against the current best candidate, computed over pooled per-row development log-loss differences) broken by worst-season log loss, then config simplicity (poisson < poisson_l2 < dixon_coles < dixon_coles_l2 < dixon_coles_l2_decay), then lower across-fold log-loss variance. Accuracy never used for selection. This selection logic is LOCAL to score_models.py, not Stage 1's training.select_best_configuration.",
+  "stage1_champion": {
+    "config_id": "baseline_strength_trio",
+    "mean_log_loss": 0.9587458323548059
+  }
+}
