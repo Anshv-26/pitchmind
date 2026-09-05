@@ -11,3 +11,4 @@ data/processed/*.parquet
 models/*.pkl
 models/*.joblib
 data/processed/*.params.json
+reports/modeling/stage1_predictions.csv

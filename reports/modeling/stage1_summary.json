@@ -1,0 +1,392 @@
+{
+  "development_folds": [
+    1,
+    2,
+    3
+  ],
+  "library_versions": {
+    "catboost": "1.2.10",
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "platform": "macOS-15.6-arm64-arm-64bit-Mach-O",
+    "python": "3.13.5",
+    "scikit_learn": "1.9.0",
+    "xgboost": "3.4.1"
+  },
+  "results": [
+    {
+      "config_id": "baseline_class_frequency",
+      "log_loss_std": 0.013527885186621713,
+      "mean_log_loss": 1.0620384112969463,
+      "model": "baseline_class_frequency",
+      "params": {},
+      "worst_log_loss": 1.0810879896180008
+    },
+    {
+      "config_id": "baseline_elo_only",
+      "log_loss_std": 0.02364942608093109,
+      "mean_log_loss": 0.9617422502568679,
+      "model": "baseline_elo_only",
+      "params": {},
+      "worst_log_loss": 0.9813265829029164
+    },
+    {
+      "config_id": "baseline_strength_trio",
+      "log_loss_std": 0.025523934881823498,
+      "mean_log_loss": 0.9587458323548059,
+      "model": "baseline_strength_trio",
+      "params": {},
+      "worst_log_loss": 0.9768879477051601
+    },
+    {
+      "config_id": "logreg[C=0.01]",
+      "log_loss_std": 0.02663267694765635,
+      "mean_log_loss": 0.9633615364297933,
+      "model": "logreg",
+      "params": {
+        "C": 0.01
+      },
+      "worst_log_loss": 0.9875316643375949
+    },
+    {
+      "config_id": "logreg[C=0.1]",
+      "log_loss_std": 0.027636183358963003,
+      "mean_log_loss": 0.9657242179199478,
+      "model": "logreg",
+      "params": {
+        "C": 0.1
+      },
+      "worst_log_loss": 0.9880261353477376
+    },
+    {
+      "config_id": "logreg[C=1.0]",
+      "log_loss_std": 0.02761576731612966,
+      "mean_log_loss": 0.9666826952397649,
+      "model": "logreg",
+      "params": {
+        "C": 1.0
+      },
+      "worst_log_loss": 0.9878410355473501
+    },
+    {
+      "config_id": "logreg[C=10.0]",
+      "log_loss_std": 0.027676350270581292,
+      "mean_log_loss": 0.9667359469570297,
+      "model": "logreg",
+      "params": {
+        "C": 10.0
+      },
+      "worst_log_loss": 0.9878415934293958
+    },
+    {
+      "config_id": "random_forest[max_depth=6_min_samples_leaf=5]",
+      "log_loss_std": 0.02193136436465055,
+      "mean_log_loss": 0.9648642934359839,
+      "model": "random_forest",
+      "params": {
+        "max_depth": 6,
+        "min_samples_leaf": 5
+      },
+      "worst_log_loss": 0.9898853051367514
+    },
+    {
+      "config_id": "random_forest[max_depth=6_min_samples_leaf=20]",
+      "log_loss_std": 0.021978096182116956,
+      "mean_log_loss": 0.9656284737061216,
+      "model": "random_forest",
+      "params": {
+        "max_depth": 6,
+        "min_samples_leaf": 20
+      },
+      "worst_log_loss": 0.9902767147035146
+    },
+    {
+      "config_id": "random_forest[max_depth=10_min_samples_leaf=5]",
+      "log_loss_std": 0.01808267140133719,
+      "mean_log_loss": 0.9665419799673124,
+      "model": "random_forest",
+      "params": {
+        "max_depth": 10,
+        "min_samples_leaf": 5
+      },
+      "worst_log_loss": 0.9859592663275532
+    },
+    {
+      "config_id": "random_forest[max_depth=10_min_samples_leaf=20]",
+      "log_loss_std": 0.019267578359714998,
+      "mean_log_loss": 0.9645799638139096,
+      "model": "random_forest",
+      "params": {
+        "max_depth": 10,
+        "min_samples_leaf": 20
+      },
+      "worst_log_loss": 0.9867401095364624
+    },
+    {
+      "config_id": "random_forest[max_depth=None_min_samples_leaf=5]",
+      "log_loss_std": 0.0165376164522828,
+      "mean_log_loss": 0.9675208873936351,
+      "model": "random_forest",
+      "params": {
+        "max_depth": null,
+        "min_samples_leaf": 5
+      },
+      "worst_log_loss": 0.9876461648953735
+    },
+    {
+      "config_id": "random_forest[max_depth=None_min_samples_leaf=20]",
+      "log_loss_std": 0.020276253016903098,
+      "mean_log_loss": 0.9652823972275059,
+      "model": "random_forest",
+      "params": {
+        "max_depth": null,
+        "min_samples_leaf": 20
+      },
+      "worst_log_loss": 0.988556960842511
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.03_max_depth=2_n_estimators=200]",
+      "log_loss_std": 0.02577960048240443,
+      "mean_log_loss": 0.9666599766405182,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.03,
+        "max_depth": 2,
+        "n_estimators": 200
+      },
+      "worst_log_loss": 0.9952403412805343
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.03_max_depth=2_n_estimators=500]",
+      "log_loss_std": 0.02453764943201712,
+      "mean_log_loss": 0.9697418952853202,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.03,
+        "max_depth": 2,
+        "n_estimators": 500
+      },
+      "worst_log_loss": 0.9966998193238201
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.1_max_depth=2_n_estimators=200]",
+      "log_loss_std": 0.023085831137237053,
+      "mean_log_loss": 0.9746942108651421,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.1,
+        "max_depth": 2,
+        "n_estimators": 200
+      },
+      "worst_log_loss": 0.9991934730485157
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.1_max_depth=2_n_estimators=500]",
+      "log_loss_std": 0.015732563256497665,
+      "mean_log_loss": 0.9932115061432031,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.1,
+        "max_depth": 2,
+        "n_estimators": 500
+      },
+      "worst_log_loss": 1.012145995324471
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.03_max_depth=3_n_estimators=200]",
+      "log_loss_std": 0.025498700484287595,
+      "mean_log_loss": 0.9667423119795665,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.03,
+        "max_depth": 3,
+        "n_estimators": 200
+      },
+      "worst_log_loss": 0.9959316430761683
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.03_max_depth=3_n_estimators=500]",
+      "log_loss_std": 0.02382943311519684,
+      "mean_log_loss": 0.9774618417002117,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.03,
+        "max_depth": 3,
+        "n_estimators": 500
+      },
+      "worst_log_loss": 1.005604777449098
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.1_max_depth=3_n_estimators=200]",
+      "log_loss_std": 0.019989079297406353,
+      "mean_log_loss": 0.9833653880574418,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.1,
+        "max_depth": 3,
+        "n_estimators": 200
+      },
+      "worst_log_loss": 1.0032634244521237
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.1_max_depth=3_n_estimators=500]",
+      "log_loss_std": 0.015689397305357625,
+      "mean_log_loss": 1.0304701343589195,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.1,
+        "max_depth": 3,
+        "n_estimators": 500
+      },
+      "worst_log_loss": 1.0485426501367345
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.03_max_depth=4_n_estimators=200]",
+      "log_loss_std": 0.02354312011295651,
+      "mean_log_loss": 0.9711561841210424,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.03,
+        "max_depth": 4,
+        "n_estimators": 200
+      },
+      "worst_log_loss": 0.9985151506781312
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.03_max_depth=4_n_estimators=500]",
+      "log_loss_std": 0.019485321680174902,
+      "mean_log_loss": 0.9911734879065385,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.03,
+        "max_depth": 4,
+        "n_estimators": 500
+      },
+      "worst_log_loss": 1.017549748386348
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.1_max_depth=4_n_estimators=200]",
+      "log_loss_std": 0.022369260679006724,
+      "mean_log_loss": 1.0063616183781714,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.1,
+        "max_depth": 4,
+        "n_estimators": 200
+      },
+      "worst_log_loss": 1.0354624312444023
+    },
+    {
+      "config_id": "xgboost[learning_rate=0.1_max_depth=4_n_estimators=500]",
+      "log_loss_std": 0.025817665561643287,
+      "mean_log_loss": 1.0944490486550644,
+      "model": "xgboost",
+      "params": {
+        "learning_rate": 0.1,
+        "max_depth": 4,
+        "n_estimators": 500
+      },
+      "worst_log_loss": 1.1305474434343128
+    },
+    {
+      "config_id": "catboost[depth=4_l2_leaf_reg=3_learning_rate=0.03]",
+      "log_loss_std": 0.025425862614277355,
+      "mean_log_loss": 0.9627564659940199,
+      "model": "catboost",
+      "params": {
+        "depth": 4,
+        "l2_leaf_reg": 3,
+        "learning_rate": 0.03
+      },
+      "worst_log_loss": 0.9907403048314959
+    },
+    {
+      "config_id": "catboost[depth=4_l2_leaf_reg=10_learning_rate=0.03]",
+      "log_loss_std": 0.024153818844408297,
+      "mean_log_loss": 0.9636199323722402,
+      "model": "catboost",
+      "params": {
+        "depth": 4,
+        "l2_leaf_reg": 10,
+        "learning_rate": 0.03
+      },
+      "worst_log_loss": 0.9901032941332858
+    },
+    {
+      "config_id": "catboost[depth=4_l2_leaf_reg=3_learning_rate=0.1]",
+      "log_loss_std": 0.02284353237112761,
+      "mean_log_loss": 0.9901961407653559,
+      "model": "catboost",
+      "params": {
+        "depth": 4,
+        "l2_leaf_reg": 3,
+        "learning_rate": 0.1
+      },
+      "worst_log_loss": 1.0192824698151943
+    },
+    {
+      "config_id": "catboost[depth=4_l2_leaf_reg=10_learning_rate=0.1]",
+      "log_loss_std": 0.02744962282656638,
+      "mean_log_loss": 0.9789165545173867,
+      "model": "catboost",
+      "params": {
+        "depth": 4,
+        "l2_leaf_reg": 10,
+        "learning_rate": 0.1
+      },
+      "worst_log_loss": 1.0150260423899338
+    },
+    {
+      "config_id": "catboost[depth=6_l2_leaf_reg=3_learning_rate=0.03]",
+      "log_loss_std": 0.023490727560764275,
+      "mean_log_loss": 0.9691753697104999,
+      "model": "catboost",
+      "params": {
+        "depth": 6,
+        "l2_leaf_reg": 3,
+        "learning_rate": 0.03
+      },
+      "worst_log_loss": 0.9967942290192949
+    },
+    {
+      "config_id": "catboost[depth=6_l2_leaf_reg=10_learning_rate=0.03]",
+      "log_loss_std": 0.024108436161364755,
+      "mean_log_loss": 0.9675429400597008,
+      "model": "catboost",
+      "params": {
+        "depth": 6,
+        "l2_leaf_reg": 10,
+        "learning_rate": 0.03
+      },
+      "worst_log_loss": 0.9955495964218837
+    },
+    {
+      "config_id": "catboost[depth=6_l2_leaf_reg=3_learning_rate=0.1]",
+      "log_loss_std": 0.026030846009941537,
+      "mean_log_loss": 1.0121314733290803,
+      "model": "catboost",
+      "params": {
+        "depth": 6,
+        "l2_leaf_reg": 3,
+        "learning_rate": 0.1
+      },
+      "worst_log_loss": 1.0479276464544178
+    },
+    {
+      "config_id": "catboost[depth=6_l2_leaf_reg=10_learning_rate=0.1]",
+      "log_loss_std": 0.02285585363680439,
+      "mean_log_loss": 0.9967376427243582,
+      "model": "catboost",
+      "params": {
+        "depth": 6,
+        "l2_leaf_reg": 10,
+        "learning_rate": 0.1
+      },
+      "worst_log_loss": 1.0237725035250849
+    }
+  ],
+  "sealed_season": "2025_26",
+  "sealed_season_scored": false,
+  "selected_configuration": "baseline_strength_trio",
+  "selection_rule": "lowest mean development log loss; ties (|paired mean diff| < 2*SE against the current best candidate, computed over pooled per-row development log-loss differences) broken by worst-season log loss, then model simplicity (logreg < random_forest < xgboost ~ catboost), then lower across-fold log-loss variance. Accuracy never used for selection."
+}
