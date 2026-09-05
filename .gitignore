@@ -10,3 +10,4 @@ data/processed/*.parquet
 # Trained model artifacts
 models/*.pkl
 models/*.joblib
+data/processed/*.params.json
