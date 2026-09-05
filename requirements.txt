@@ -1,4 +1,10 @@
 requests>=2.31
 pandas>=2.1
+numpy>=1.26
 pyarrow>=14
 pytest
+
+# Stage 1 model training (backend/app/ml/{baselines,training,evaluation}.py)
+scikit-learn>=1.5
+xgboost>=2.0
+catboost>=1.2
