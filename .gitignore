@@ -13,3 +13,4 @@ models/*.joblib
 data/processed/*.params.json
 reports/modeling/stage1_predictions.csv
 reports/modeling/score_models_predictions.csv
+reports/modeling/calibration_predictions.csv

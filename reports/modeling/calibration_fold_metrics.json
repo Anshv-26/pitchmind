@@ -1,0 +1,508 @@
+[
+  {
+    "accuracy": 0.5815789473684211,
+    "brier_score": 0.5434931542631807,
+    "candidate": "raw_trio",
+    "confusion_matrix": [
+      [
+        144,
+        0,
+        31
+      ],
+      [
+        47,
+        0,
+        35
+      ],
+      [
+        46,
+        0,
+        77
+      ]
+    ],
+    "evaluation_season": "2023_24",
+    "expected_calibration_error": 0.02219201169846519,
+    "f1_per_class": {
+      "A": 0.5789473684210527,
+      "D": 0.0,
+      "H": 0.6990291262135923
+    },
+    "fitted_params": {},
+    "fold": 1,
+    "log_loss": 0.9226497008455358,
+    "macro_f1": 0.425992164878215,
+    "mean_predicted_probability": {
+      "A": 0.3221515949611568,
+      "D": 0.2286335571269651,
+      "H": 0.4492148479118781
+    },
+    "meta_fold": 1,
+    "meta_train_seasons": [
+      "2022_23"
+    ],
+    "n_evaluation_rows": 380,
+    "n_meta_train_rows": 380,
+    "n_rows": 380,
+    "precision_per_class": {
+      "A": 0.5384615384615384,
+      "D": 0.0,
+      "H": 0.6075949367088608
+    },
+    "realised_frequency": {
+      "A": 0.3236842105263158,
+      "D": 0.21578947368421053,
+      "H": 0.4605263157894737
+    },
+    "recall_per_class": {
+      "A": 0.6260162601626016,
+      "D": 0.0,
+      "H": 0.8228571428571428
+    },
+    "validation_season": "2023_24"
+  },
+  {
+    "accuracy": 0.5263157894736842,
+    "brier_score": 0.5833471886301209,
+    "candidate": "raw_trio",
+    "confusion_matrix": [
+      [
+        126,
+        0,
+        29
+      ],
+      [
+        63,
+        0,
+        30
+      ],
+      [
+        58,
+        0,
+        74
+      ]
+    ],
+    "evaluation_season": "2024_25",
+    "expected_calibration_error": 0.03866369812502803,
+    "f1_per_class": {
+      "A": 0.5584905660377358,
+      "D": 0.0,
+      "H": 0.6268656716417911
+    },
+    "fitted_params": {},
+    "fold": 2,
+    "log_loss": 0.9766998485137219,
+    "macro_f1": 0.3951187458931756,
+    "mean_predicted_probability": {
+      "A": 0.3198390759484892,
+      "D": 0.2290200510620179,
+      "H": 0.4511408729894928
+    },
+    "meta_fold": 2,
+    "meta_train_seasons": [
+      "2022_23",
+      "2023_24"
+    ],
+    "n_evaluation_rows": 380,
+    "n_meta_train_rows": 760,
+    "n_rows": 380,
+    "precision_per_class": {
+      "A": 0.556390977443609,
+      "D": 0.0,
+      "H": 0.5101214574898786
+    },
+    "realised_frequency": {
+      "A": 0.3473684210526316,
+      "D": 0.24473684210526317,
+      "H": 0.40789473684210525
+    },
+    "recall_per_class": {
+      "A": 0.5606060606060606,
+      "D": 0.0,
+      "H": 0.8129032258064516
+    },
+    "validation_season": "2024_25"
+  },
+  {
+    "accuracy": 0.5815789473684211,
+    "brier_score": 0.5443112156916995,
+    "candidate": "temperature_trio",
+    "confusion_matrix": [
+      [
+        144,
+        0,
+        31
+      ],
+      [
+        47,
+        0,
+        35
+      ],
+      [
+        46,
+        0,
+        77
+      ]
+    ],
+    "evaluation_season": "2023_24",
+    "expected_calibration_error": 0.028670347146491908,
+    "f1_per_class": {
+      "A": 0.5789473684210527,
+      "D": 0.0,
+      "H": 0.6990291262135923
+    },
+    "fitted_params": {
+      "T": 1.0430414713105984
+    },
+    "fold": 1,
+    "log_loss": 0.9239969515175362,
+    "macro_f1": 0.425992164878215,
+    "mean_predicted_probability": {
+      "A": 0.3218194890378092,
+      "D": 0.23325760134032947,
+      "H": 0.4449229096218612
+    },
+    "meta_fold": 1,
+    "meta_train_seasons": [
+      "2022_23"
+    ],
+    "n_evaluation_rows": 380,
+    "n_meta_train_rows": 380,
+    "n_rows": 380,
+    "precision_per_class": {
+      "A": 0.5384615384615384,
+      "D": 0.0,
+      "H": 0.6075949367088608
+    },
+    "realised_frequency": {
+      "A": 0.3236842105263158,
+      "D": 0.21578947368421053,
+      "H": 0.4605263157894737
+    },
+    "recall_per_class": {
+      "A": 0.6260162601626016,
+      "D": 0.0,
+      "H": 0.8228571428571428
+    },
+    "validation_season": "2023_24"
+  },
+  {
+    "accuracy": 0.5263157894736842,
+    "brier_score": 0.5841569958803663,
+    "candidate": "temperature_trio",
+    "confusion_matrix": [
+      [
+        126,
+        0,
+        29
+      ],
+      [
+        63,
+        0,
+        30
+      ],
+      [
+        58,
+        0,
+        74
+      ]
+    ],
+    "evaluation_season": "2024_25",
+    "expected_calibration_error": 0.04995876318712512,
+    "f1_per_class": {
+      "A": 0.5584905660377358,
+      "D": 0.0,
+      "H": 0.6268656716417911
+    },
+    "fitted_params": {
+      "T": 0.9628472795381802
+    },
+    "fold": 2,
+    "log_loss": 0.9777938004309955,
+    "macro_f1": 0.3951187458931756,
+    "mean_predicted_probability": {
+      "A": 0.3200267328881981,
+      "D": 0.22474820261591125,
+      "H": 0.4552250644958907
+    },
+    "meta_fold": 2,
+    "meta_train_seasons": [
+      "2022_23",
+      "2023_24"
+    ],
+    "n_evaluation_rows": 380,
+    "n_meta_train_rows": 760,
+    "n_rows": 380,
+    "precision_per_class": {
+      "A": 0.556390977443609,
+      "D": 0.0,
+      "H": 0.5101214574898786
+    },
+    "realised_frequency": {
+      "A": 0.3473684210526316,
+      "D": 0.24473684210526317,
+      "H": 0.40789473684210525
+    },
+    "recall_per_class": {
+      "A": 0.5606060606060606,
+      "D": 0.0,
+      "H": 0.8129032258064516
+    },
+    "validation_season": "2024_25"
+  },
+  {
+    "accuracy": 0.5815789473684211,
+    "brier_score": 0.5434931542631807,
+    "candidate": "pool_raw_trio",
+    "confusion_matrix": [
+      [
+        144,
+        0,
+        31
+      ],
+      [
+        47,
+        0,
+        35
+      ],
+      [
+        46,
+        0,
+        77
+      ]
+    ],
+    "evaluation_season": "2023_24",
+    "expected_calibration_error": 0.02219201169846519,
+    "f1_per_class": {
+      "A": 0.5789473684210527,
+      "D": 0.0,
+      "H": 0.6990291262135923
+    },
+    "fitted_params": {
+      "w": 1.0
+    },
+    "fold": 1,
+    "log_loss": 0.9226497008455358,
+    "macro_f1": 0.425992164878215,
+    "mean_predicted_probability": {
+      "A": 0.3221515949611568,
+      "D": 0.2286335571269651,
+      "H": 0.4492148479118781
+    },
+    "meta_fold": 1,
+    "meta_train_seasons": [
+      "2022_23"
+    ],
+    "n_evaluation_rows": 380,
+    "n_meta_train_rows": 380,
+    "n_rows": 380,
+    "precision_per_class": {
+      "A": 0.5384615384615384,
+      "D": 0.0,
+      "H": 0.6075949367088608
+    },
+    "realised_frequency": {
+      "A": 0.3236842105263158,
+      "D": 0.21578947368421053,
+      "H": 0.4605263157894737
+    },
+    "recall_per_class": {
+      "A": 0.6260162601626016,
+      "D": 0.0,
+      "H": 0.8228571428571428
+    },
+    "validation_season": "2023_24"
+  },
+  {
+    "accuracy": 0.5263157894736842,
+    "brier_score": 0.5833471886301209,
+    "candidate": "pool_raw_trio",
+    "confusion_matrix": [
+      [
+        126,
+        0,
+        29
+      ],
+      [
+        63,
+        0,
+        30
+      ],
+      [
+        58,
+        0,
+        74
+      ]
+    ],
+    "evaluation_season": "2024_25",
+    "expected_calibration_error": 0.03866369812502803,
+    "f1_per_class": {
+      "A": 0.5584905660377358,
+      "D": 0.0,
+      "H": 0.6268656716417911
+    },
+    "fitted_params": {
+      "w": 1.0
+    },
+    "fold": 2,
+    "log_loss": 0.9766998485137219,
+    "macro_f1": 0.3951187458931756,
+    "mean_predicted_probability": {
+      "A": 0.3198390759484892,
+      "D": 0.2290200510620179,
+      "H": 0.4511408729894928
+    },
+    "meta_fold": 2,
+    "meta_train_seasons": [
+      "2022_23",
+      "2023_24"
+    ],
+    "n_evaluation_rows": 380,
+    "n_meta_train_rows": 760,
+    "n_rows": 380,
+    "precision_per_class": {
+      "A": 0.556390977443609,
+      "D": 0.0,
+      "H": 0.5101214574898786
+    },
+    "realised_frequency": {
+      "A": 0.3473684210526316,
+      "D": 0.24473684210526317,
+      "H": 0.40789473684210525
+    },
+    "recall_per_class": {
+      "A": 0.5606060606060606,
+      "D": 0.0,
+      "H": 0.8129032258064516
+    },
+    "validation_season": "2024_25"
+  },
+  {
+    "accuracy": 0.5815789473684211,
+    "brier_score": 0.5443112130279634,
+    "candidate": "pool_calibrated_trio",
+    "confusion_matrix": [
+      [
+        144,
+        0,
+        31
+      ],
+      [
+        47,
+        0,
+        35
+      ],
+      [
+        46,
+        0,
+        77
+      ]
+    ],
+    "evaluation_season": "2023_24",
+    "expected_calibration_error": 0.02867032327767213,
+    "f1_per_class": {
+      "A": 0.5789473684210527,
+      "D": 0.0,
+      "H": 0.6990291262135923
+    },
+    "fitted_params": {
+      "T": 1.0430413470271724,
+      "w": 1.0
+    },
+    "fold": 1,
+    "log_loss": 0.9239969471903144,
+    "macro_f1": 0.425992164878215,
+    "mean_predicted_probability": {
+      "A": 0.3218194898918674,
+      "D": 0.2332575884893142,
+      "H": 0.44492292161881825
+    },
+    "meta_fold": 1,
+    "meta_train_seasons": [
+      "2022_23"
+    ],
+    "n_evaluation_rows": 380,
+    "n_meta_train_rows": 380,
+    "n_rows": 380,
+    "precision_per_class": {
+      "A": 0.5384615384615384,
+      "D": 0.0,
+      "H": 0.6075949367088608
+    },
+    "realised_frequency": {
+      "A": 0.3236842105263158,
+      "D": 0.21578947368421053,
+      "H": 0.4605263157894737
+    },
+    "recall_per_class": {
+      "A": 0.6260162601626016,
+      "D": 0.0,
+      "H": 0.8228571428571428
+    },
+    "validation_season": "2023_24"
+  },
+  {
+    "accuracy": 0.5263157894736842,
+    "brier_score": 0.5841569948847626,
+    "candidate": "pool_calibrated_trio",
+    "confusion_matrix": [
+      [
+        126,
+        0,
+        29
+      ],
+      [
+        63,
+        0,
+        30
+      ],
+      [
+        58,
+        0,
+        74
+      ]
+    ],
+    "evaluation_season": "2024_25",
+    "expected_calibration_error": 0.04995876102090933,
+    "f1_per_class": {
+      "A": 0.5584905660377358,
+      "D": 0.0,
+      "H": 0.6268656716417911
+    },
+    "fitted_params": {
+      "T": 0.962847318577451,
+      "w": 1.0
+    },
+    "fold": 2,
+    "log_loss": 0.9777937990416172,
+    "macro_f1": 0.3951187458931756,
+    "mean_predicted_probability": {
+      "A": 0.32002673266474785,
+      "D": 0.22474820725811814,
+      "H": 0.4552250600771339
+    },
+    "meta_fold": 2,
+    "meta_train_seasons": [
+      "2022_23",
+      "2023_24"
+    ],
+    "n_evaluation_rows": 380,
+    "n_meta_train_rows": 760,
+    "n_rows": 380,
+    "precision_per_class": {
+      "A": 0.556390977443609,
+      "D": 0.0,
+      "H": 0.5101214574898786
+    },
+    "realised_frequency": {
+      "A": 0.3473684210526316,
+      "D": 0.24473684210526317,
+      "H": 0.40789473684210525
+    },
+    "recall_per_class": {
+      "A": 0.5606060606060606,
+      "D": 0.0,
+      "H": 0.8129032258064516
+    },
+    "validation_season": "2024_25"
+  }
+]
