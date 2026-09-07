@@ -29,6 +29,7 @@ from backend.app.services.football_data.models import (
     StandingRow,
     TeamRef,
 )
+from backend.app.services.football_data.football_data_org import RateLimitInfo
 from backend.app.services.football_data.provider import (
     BaseProvider,
     Capability,
@@ -66,6 +67,7 @@ __all__ = [
     "BaseProvider",
     "Capability",
     "FootballDataProvider",
+    "RateLimitInfo",
     "FootballDataService",
     "CanonicalTeam",
     "TeamRegistry",

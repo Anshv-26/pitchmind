@@ -91,45 +91,107 @@ def normalize_team_name(raw: str) -> str:
 
 # --------------------------------------------------------------------------
 # Registry: every club appearing in the frozen historical dataset
-# (34 clubs across seasons 2015/16-2025/26, verified against matches.parquet).
+# (34 clubs across seasons 2015/16-2025/26, verified against matches.parquet),
+# plus current-only clubs discovered via real verification (see
+# scripts/verify_football_data_org.py).
+#
 # `historical_names` are the exact Football-Data CSV spellings.
+#
+# `provider_ids[PROVIDER_FOOTBALL_DATA_ORG]` values below are REAL numeric ids
+# read directly from football-data.org's `/competitions/PL/matches` and
+# `/competitions/PL/standings` responses for the live 2026/27 season (request
+# made 2026-09; see the verification script's docstring for exact endpoints).
+# None are guessed - a club with no id here simply has not appeared in a
+# verified current-season response yet.
 # --------------------------------------------------------------------------
 _CANONICAL_TEAMS: tuple[CanonicalTeam, ...] = (
-    CanonicalTeam("arsenal", "Arsenal", ("Arsenal",), ("Arsenal FC",)),
-    CanonicalTeam("aston_villa", "Aston Villa", ("Aston Villa",), ("Aston Villa FC", "Villa")),
-    CanonicalTeam("bournemouth", "Bournemouth", ("Bournemouth",), ("AFC Bournemouth", "Bournemouth AFC")),
-    CanonicalTeam("brentford", "Brentford", ("Brentford",), ("Brentford FC",)),
+    CanonicalTeam(
+        "arsenal", "Arsenal", ("Arsenal",), ("Arsenal FC",),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "57"},
+    ),
+    CanonicalTeam(
+        "aston_villa", "Aston Villa", ("Aston Villa",), ("Aston Villa FC", "Villa"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "58"},
+    ),
+    CanonicalTeam(
+        "bournemouth", "Bournemouth", ("Bournemouth",), ("AFC Bournemouth", "Bournemouth AFC"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "1044"},
+    ),
+    CanonicalTeam(
+        "brentford", "Brentford", ("Brentford",), ("Brentford FC",),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "402"},
+    ),
     CanonicalTeam(
         "brighton",
         "Brighton & Hove Albion",
         ("Brighton",),
         ("Brighton & Hove Albion FC", "Brighton and Hove Albion", "Brighton Hove Albion"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "397"},
     ),
     CanonicalTeam("burnley", "Burnley", ("Burnley",), ("Burnley FC",)),
     CanonicalTeam("cardiff", "Cardiff City", ("Cardiff",), ("Cardiff City FC",)),
-    CanonicalTeam("chelsea", "Chelsea", ("Chelsea",), ("Chelsea FC",)),
-    CanonicalTeam("crystal_palace", "Crystal Palace", ("Crystal Palace",), ("Crystal Palace FC",)),
-    CanonicalTeam("everton", "Everton", ("Everton",), ("Everton FC",)),
-    CanonicalTeam("fulham", "Fulham", ("Fulham",), ("Fulham FC",)),
+    CanonicalTeam(
+        "chelsea", "Chelsea", ("Chelsea",), ("Chelsea FC",),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "61"},
+    ),
+    # Current-only: not in the 2015/16-2025/26 historical ML dataset (verified
+    # absent from data/processed/matches.parquet). Promoted for 2026/27.
+    CanonicalTeam(
+        "coventry_city",
+        "Coventry City",
+        (),
+        ("Coventry City FC", "Coventry"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "1076"},
+        historical_ml_history_available=False,
+    ),
+    CanonicalTeam(
+        "crystal_palace", "Crystal Palace", ("Crystal Palace",), ("Crystal Palace FC",),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "354"},
+    ),
+    CanonicalTeam(
+        "everton", "Everton", ("Everton",), ("Everton FC",),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "62"},
+    ),
+    CanonicalTeam(
+        "fulham", "Fulham", ("Fulham",), ("Fulham FC",),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "63"},
+    ),
     CanonicalTeam(
         "huddersfield", "Huddersfield Town", ("Huddersfield",), ("Huddersfield Town AFC", "Huddersfield Town FC")
     ),
-    CanonicalTeam("hull", "Hull City", ("Hull",), ("Hull City AFC", "Hull City FC")),
-    CanonicalTeam("ipswich", "Ipswich Town", ("Ipswich",), ("Ipswich Town FC",)),
-    CanonicalTeam("leeds", "Leeds United", ("Leeds",), ("Leeds United FC", "Leeds Utd")),
+    CanonicalTeam(
+        "hull", "Hull City", ("Hull",), ("Hull City AFC", "Hull City FC"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "322"},
+    ),
+    CanonicalTeam(
+        "ipswich", "Ipswich Town", ("Ipswich",), ("Ipswich Town FC",),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "349"},
+    ),
+    CanonicalTeam(
+        "leeds", "Leeds United", ("Leeds",), ("Leeds United FC", "Leeds Utd"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "341"},
+    ),
     CanonicalTeam("leicester", "Leicester City", ("Leicester",), ("Leicester City FC",)),
-    CanonicalTeam("liverpool", "Liverpool", ("Liverpool",), ("Liverpool FC",)),
+    CanonicalTeam(
+        "liverpool", "Liverpool", ("Liverpool",), ("Liverpool FC",),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "64"},
+    ),
     CanonicalTeam("luton", "Luton Town", ("Luton",), ("Luton Town FC",)),
-    CanonicalTeam("man_city", "Manchester City", ("Man City",), ("Manchester City FC", "Man. City")),
+    CanonicalTeam(
+        "man_city", "Manchester City", ("Man City",), ("Manchester City FC", "Man. City"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "65"},
+    ),
     CanonicalTeam(
         "man_united",
         "Manchester United",
         ("Man United",),
         ("Manchester United FC", "Man Utd", "Man. United", "Manchester Utd"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "66"},
     ),
     CanonicalTeam("middlesbrough", "Middlesbrough", ("Middlesbrough",), ("Middlesbrough FC",)),
     CanonicalTeam(
-        "newcastle", "Newcastle United", ("Newcastle",), ("Newcastle United FC", "Newcastle Utd")
+        "newcastle", "Newcastle United", ("Newcastle",), ("Newcastle United FC", "Newcastle Utd"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "67"},
     ),
     CanonicalTeam("norwich", "Norwich City", ("Norwich",), ("Norwich City FC",)),
     CanonicalTeam(
@@ -137,16 +199,21 @@ _CANONICAL_TEAMS: tuple[CanonicalTeam, ...] = (
         "Nottingham Forest",
         ("Nott'm Forest",),
         ("Nottingham Forest FC", "Nottm Forest", "Notts Forest"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "351"},
     ),
     CanonicalTeam(
         "sheffield_united", "Sheffield United", ("Sheffield United",), ("Sheffield United FC", "Sheffield Utd")
     ),
     CanonicalTeam("southampton", "Southampton", ("Southampton",), ("Southampton FC",)),
     CanonicalTeam("stoke", "Stoke City", ("Stoke",), ("Stoke City FC",)),
-    CanonicalTeam("sunderland", "Sunderland", ("Sunderland",), ("Sunderland AFC", "Sunderland FC")),
+    CanonicalTeam(
+        "sunderland", "Sunderland", ("Sunderland",), ("Sunderland AFC", "Sunderland FC"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "71"},
+    ),
     CanonicalTeam("swansea", "Swansea City", ("Swansea",), ("Swansea City AFC", "Swansea City FC")),
     CanonicalTeam(
-        "tottenham", "Tottenham Hotspur", ("Tottenham",), ("Tottenham Hotspur FC", "Spurs")
+        "tottenham", "Tottenham Hotspur", ("Tottenham",), ("Tottenham Hotspur FC", "Spurs"),
+        provider_ids={PROVIDER_FOOTBALL_DATA_ORG: "73"},
     ),
     CanonicalTeam("watford", "Watford", ("Watford",), ("Watford FC",)),
     CanonicalTeam(

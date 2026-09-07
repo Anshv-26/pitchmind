@@ -303,6 +303,19 @@ def test_current_only_team_has_identity_without_historical_history():
     assert registry.has_historical_ml_history("arsenal") is True
 
 
+def test_coventry_city_is_a_real_discovered_current_only_club():
+    """Unlike the synthetic 'Newcomer FC' case above, this club is a genuine
+    discovery: a real free-tier football-data.org call against the live
+    2026/27 season (see scripts/verify_football_data_org.py) returned
+    'Coventry City FC' as a current Premier League club, and it is verified
+    absent from the 34-club historical ML dataset."""
+    registry = default_registry()
+    team = registry.resolve("Coventry City FC")
+    assert team.canonical_id == "coventry_city"
+    assert registry.has_historical_ml_history("coventry_city") is False
+    assert registry.resolve_by_provider_id("football_data_org", 1076).canonical_id == "coventry_city"
+
+
 def test_ambiguous_alias_registration_is_refused():
     registry = TeamRegistry()
     with pytest.raises(ValueError, match="already mapped"):

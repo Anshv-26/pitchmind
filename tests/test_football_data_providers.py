@@ -178,6 +178,94 @@ def test_football_data_org_unknown_status_becomes_unknown():
     assert provider.get_fixtures("2026_27")[0].status is FixtureStatus.UNKNOWN
 
 
+# --------------------------------------------------------------------------
+# Real-verification regressions (see scripts/verify_football_data_org.py):
+# a real free-tier call against the 2026/27 season revealed a current-only
+# club ("Coventry City FC") absent from the historical registry, and two
+# genuine quota headers the adapter previously discarded.
+# --------------------------------------------------------------------------
+def test_football_data_org_resolves_a_current_only_promoted_club():
+    """Coventry City FC has no historical ML data but IS a valid current
+    canonical identity - the real-verification scenario that surfaced this."""
+    payload = {
+        "matches": [
+            {
+                "id": 999999,
+                "utcDate": "2026-09-12T14:00:00Z",
+                "status": "SCHEDULED",
+                "matchday": 4,
+                "homeTeam": {"id": 1076, "name": "Coventry City FC"},
+                "awayTeam": {"id": 57, "name": "Arsenal FC"},
+                "score": {"fullTime": {"home": None, "away": None}},
+            }
+        ]
+    }
+    provider = FootballDataOrgProvider(make_settings(), client=mock_client(json_handler(payload)))
+    fixture = provider.get_fixtures("2026_27")[0]
+    assert fixture.home_team.canonical_id == "coventry_city"
+
+    from backend.app.services.football_data.teams import default_registry
+
+    assert default_registry().has_historical_ml_history("coventry_city") is False
+
+
+def test_football_data_org_verified_provider_ids_resolve():
+    """IDs verified against the real API (not guessed) resolve correctly."""
+    from backend.app.services.football_data.teams import default_registry
+
+    registry = default_registry()
+    assert registry.resolve_by_provider_id("football_data_org", 57).canonical_id == "arsenal"
+    assert registry.resolve_by_provider_id("football_data_org", "73").canonical_id == "tottenham"
+    assert registry.resolve_by_provider_id("football_data_org", 1076).canonical_id == "coventry_city"
+
+
+def test_football_data_org_captures_real_rate_limit_headers():
+    """The provider's real free-tier responses carry
+    X-Requests-Available-Minute / X-RequestCounter-Reset - verified by a real
+    call, not assumed. The adapter must preserve them, not discard them."""
+    provider = FootballDataOrgProvider(
+        make_settings(),
+        client=mock_client(
+            json_handler(
+                FD_ORG_MATCHES,
+                headers={"X-Requests-Available-Minute": "8", "X-RequestCounter-Reset": "59"},
+            )
+        ),
+    )
+    assert provider.last_rate_limit is None  # nothing yet before any request
+    provider.get_fixtures("2026_27")
+    rate_limit = provider.last_rate_limit
+    assert rate_limit is not None
+    assert rate_limit.requests_available_this_minute == 8
+    assert rate_limit.reset_seconds == 59
+    assert rate_limit.retry_after_seconds is None
+
+
+def test_football_data_org_rate_limit_missing_headers_stay_none():
+    """No quota headers on this response -> fields stay None, never 0."""
+    provider = FootballDataOrgProvider(make_settings(), client=mock_client(json_handler(FD_ORG_MATCHES)))
+    provider.get_fixtures("2026_27")
+    assert provider.last_rate_limit.requests_available_this_minute is None
+    assert provider.last_rate_limit.reset_seconds is None
+
+
+def test_football_data_org_rate_limit_captured_even_on_429():
+    provider = FootballDataOrgProvider(
+        make_settings(),
+        client=mock_client(
+            json_handler(
+                {},
+                status_code=429,
+                headers={"Retry-After": "42", "X-Requests-Available-Minute": "0"},
+            )
+        ),
+    )
+    with pytest.raises(ProviderRateLimited):
+        provider.get_fixtures("2026_27")
+    assert provider.last_rate_limit.requests_available_this_minute == 0
+    assert provider.last_rate_limit.retry_after_seconds == 42.0
+
+
 @pytest.mark.parametrize("status_code", [500, 502, 503])
 def test_server_errors_raise_provider_unavailable(status_code):
     provider = FootballDataOrgProvider(

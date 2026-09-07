@@ -9,9 +9,17 @@ This adapter therefore declares only FIXTURES and STANDINGS. It does not
 implement live methods at all, so asking it for live data raises
 `UnsupportedCapability` via `BaseProvider` rather than returning an empty list
 that a caller could mistake for "no matches are live".
+
+Verified against a real free-tier token (see scripts/verify_football_data_org.py):
+X-Auth-Token authentication succeeds; the current season (2026-08-21 to
+2027-05-30) is genuinely accessible; and the provider reports quota via two
+headers - `X-Requests-Available-Minute` and `X-RequestCounter-Reset` -
+captured after every request as `RateLimitInfo` (see `last_rate_limit`).
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import httpx
 
@@ -59,6 +67,33 @@ def map_status(raw: str | None) -> FixtureStatus:
     return _STATUS_MAP.get(str(raw).upper(), FixtureStatus.UNKNOWN)
 
 
+@dataclass(frozen=True)
+class RateLimitInfo:
+    """The two quota headers football-data.org actually returns, verified
+    against a real free-tier response (see scripts/verify_football_data_org.py):
+
+        X-Requests-Available-Minute: requests still allowed in this minute
+        X-RequestCounter-Reset:      seconds until that per-minute counter resets
+
+    This is deliberately just a data holder - it is not a quota-management
+    subsystem. Nothing here throttles or delays requests automatically.
+    """
+
+    requests_available_this_minute: int | None
+    reset_seconds: int | None
+    retry_after_seconds: float | None = None
+
+
+def _parse_int_header(headers: httpx.Headers, name: str) -> int | None:
+    raw = headers.get(name)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
 class FootballDataOrgProvider(BaseProvider):
     """Adapter for football-data.org v4 (free tier scope)."""
 
@@ -77,6 +112,7 @@ class FootballDataOrgProvider(BaseProvider):
         self._client = client
         self._registry = registry if registry is not None else default_registry()
         self._competition_code = competition_code
+        self._last_rate_limit: RateLimitInfo | None = None
 
     def capabilities(self) -> frozenset[Capability]:
         """With no API key configured this provider can do nothing - it
@@ -84,6 +120,13 @@ class FootballDataOrgProvider(BaseProvider):
         if not self._settings.has_football_data_org_key:
             return frozenset()
         return self._CAPABILITIES
+
+    @property
+    def last_rate_limit(self) -> RateLimitInfo | None:
+        """Quota metadata from the most recently completed request, or
+        `None` before any request has been made. Preserved for callers/
+        operators to inspect - not consulted automatically before requests."""
+        return self._last_rate_limit
 
     # ---- HTTP ----------------------------------------------------------
     def _get(self, path: str, params: dict | None = None) -> dict:
@@ -122,11 +165,17 @@ class FootballDataOrgProvider(BaseProvider):
             if owns_client:
                 client.close()
 
+        retry_after_header = response.headers.get("Retry-After")
+        self._last_rate_limit = RateLimitInfo(
+            requests_available_this_minute=_parse_int_header(response.headers, "X-Requests-Available-Minute"),
+            reset_seconds=_parse_int_header(response.headers, "X-RequestCounter-Reset"),
+            retry_after_seconds=float(retry_after_header) if retry_after_header else None,
+        )
+
         if response.status_code == 429:
-            retry_after = response.headers.get("Retry-After")
             raise ProviderRateLimited(
                 f"{self.name}: rate limited (HTTP 429)",
-                retry_after_seconds=float(retry_after) if retry_after else None,
+                retry_after_seconds=self._last_rate_limit.retry_after_seconds,
             )
         if response.status_code >= 500:
             raise ProviderUnavailable(f"{self.name}: server error (HTTP {response.status_code})")
