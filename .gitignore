@@ -2,6 +2,11 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Credentials - never commit. .env.example IS committed (placeholders only).
+.env
+.env.*
+!.env.example
 # Downloaded / generated data
 data/raw/*.csv
 data/processed/*.csv

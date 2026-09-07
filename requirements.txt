@@ -19,3 +19,10 @@ scipy>=1.11
 # transitively via scikit-learn; declared explicitly since explanations.py
 # imports it directly.
 joblib>=1.3
+
+# Current/live football data layer (backend/app/services/football_data/).
+# pydantic: provider-neutral schemas, chosen over dataclasses because FastAPI
+# (already the committed stack) depends on it and it validates untrusted
+# provider payloads. httpx: HTTP client for the provider adapters.
+pydantic>=2
+httpx>=0.27
