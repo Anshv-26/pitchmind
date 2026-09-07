@@ -13,3 +13,9 @@ catboost>=1.2
 # Already present transitively via scikit-learn; declared explicitly since
 # score_models.py imports it directly (scipy.optimize, scipy.stats, scipy.special).
 scipy>=1.11
+
+# Explanation layer (backend/app/ml/explanations.py): joblib serializes the
+# frozen baseline_strength_trio inference artifact. Already present
+# transitively via scikit-learn; declared explicitly since explanations.py
+# imports it directly.
+joblib>=1.3

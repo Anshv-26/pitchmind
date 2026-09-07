@@ -1,0 +1,46 @@
+{
+  "artifact_format_version": "1.0",
+  "class_mapping": {
+    "A": 2,
+    "D": 1,
+    "H": 0
+  },
+  "feature_columns": [
+    "elo_diff",
+    "diff_ewma_ppg",
+    "diff_ewma_sot_diff"
+  ],
+  "intended_final_evaluation_season": "2025_26",
+  "library_versions": {
+    "joblib": "1.6.0",
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "platform": "macOS-15.6-arm64-arm-64bit-Mach-O",
+    "python": "3.13.5",
+    "scikit_learn": "1.9.0"
+  },
+  "model_id": "baseline_strength_trio",
+  "n_training_rows": 3800,
+  "requires_retraining_before_final_evaluation": false,
+  "source_feature_artifact": "/Users/vishalvadhera/Documents/pitchmind/data/processed/features_causal_through_2023_24.parquet",
+  "training_cutoff_season": "2024_25",
+  "training_seasons": [
+    "2015_16",
+    "2016_17",
+    "2017_18",
+    "2018_19",
+    "2019_20",
+    "2020_21",
+    "2021_22",
+    "2022_23",
+    "2023_24",
+    "2024_25"
+  ],
+  "transformed_feature_names": [
+    "elo_diff",
+    "diff_ewma_ppg",
+    "diff_ewma_sot_diff",
+    "missingindicator_diff_ewma_ppg",
+    "missingindicator_diff_ewma_sot_diff"
+  ]
+}
