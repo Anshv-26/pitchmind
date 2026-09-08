@@ -75,6 +75,20 @@ class FootballDataService:
     def live_ttl_seconds(self) -> int:
         return self._settings.live_ttl_seconds
 
+    @property
+    def season_label(self) -> str:
+        return self._season_label
+
+    @property
+    def current_provider_name(self) -> str | None:
+        """Name of the configured current-data provider, or None if absent."""
+        return None if self._current_provider is None else self._current_provider.name
+
+    @property
+    def live_provider_name(self) -> str | None:
+        """Name of the configured live provider, or None if absent."""
+        return None if self._live_provider is None else self._live_provider.name
+
     # ---- Freshness -----------------------------------------------------
     def _freshness_from_entry(
         self, entry: CacheEntry, provider_name: str, ttl_seconds: int
@@ -201,3 +215,37 @@ class FootballDataService:
         """Age of the live snapshot, for "last updated N seconds ago"."""
         entry = self._cache.peek(_LIVE_MATCHES_KEY)
         return None if entry is None else entry.age_seconds(now=now)
+
+    # Cache kinds callers may ask about, so no caller has to know the internal
+    # cache key strings.
+    CACHE_KINDS: dict[str, str] = {
+        "live": _LIVE_MATCHES_KEY,
+        "standings": _STANDINGS_KEY,
+        "fixtures": _FIXTURES_KEY,
+    }
+
+    def cache_entry_for(self, kind: str) -> CacheEntry | None:
+        """The cached entry for one data kind, or None if nothing is cached.
+
+        Exposed so the serving layer can report freshness/staleness provenance
+        without duplicating this module's private cache-key constants.
+        """
+        try:
+            key = self.CACHE_KINDS[kind]
+        except KeyError:
+            raise ValueError(
+                f"unknown cache kind {kind!r}; expected one of {sorted(self.CACHE_KINDS)}"
+            ) from None
+        return self._cache.peek(key)
+
+    def ttl_seconds_for(self, kind: str) -> int:
+        """The configured TTL for one data kind."""
+        ttls = {
+            "live": self._settings.live_ttl_seconds,
+            "standings": self._settings.standings_ttl_seconds,
+            "fixtures": self._settings.fixtures_ttl_seconds,
+        }
+        try:
+            return ttls[kind]
+        except KeyError:
+            raise ValueError(f"unknown cache kind {kind!r}; expected one of {sorted(ttls)}") from None
