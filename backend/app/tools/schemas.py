@@ -212,10 +212,94 @@ class OutcomeExplanationResponse(BaseModel):
     )
 
 
+# --------------------------------------------------------------------------
+# Scoreline prediction (frozen Dixon-Coles) - SEPARATE from the primary
+# strength-trio H/D/A model above.
+# --------------------------------------------------------------------------
+class ScoreModelProvenance(BaseModel):
+    """Which frozen scoreline artifact produced this, and its configuration."""
+
+    model_config = ConfigDict(frozen=True, protected_namespaces=())
+
+    model_id: str
+    model_type: str
+    training_cutoff_season: str
+    artifact_format_version: str
+    l2_sigma: float | None
+    decay_half_life_days: float | None
+    training_match_count: int
+    source_kind: SourceKind = SourceKind.LOCAL_MODEL
+    sealed_final_test_completed: bool = False
+    usage_note: str = (
+        "Frozen Dixon-Coles scoreline model trained through 2024/25. This is "
+        "PitchMind's expected-goals / scoreline model, NOT its primary H/D/A "
+        "predictor - that remains the strength-trio classifier at /api/v1/predict."
+    )
+
+
+class ScorelinePredictionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    home_team: str = Field(min_length=1, description="Any known club spelling.")
+    away_team: str = Field(min_length=1, description="Any known club spelling.")
+    top_n: int | None = Field(
+        default=None,
+        ge=1,
+        le=3,
+        description=(
+            "How many most-likely scorelines to return (1-3, default 3). Capped at 3 "
+            "because the frozen score model's predict_match returns exactly three; "
+            "advertising more would promise what it cannot deliver."
+        ),
+    )
+
+
+class ScorelineProbability(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    home_goals: int
+    away_goals: int
+    scoreline: str
+    probability: float
+
+
+class ScorelinePredictionResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    home_team: str
+    away_team: str
+    home_team_model_key: str
+    away_team_model_key: str
+    expected_home_goals: float
+    expected_away_goals: float
+    lambda_home: float
+    lambda_away: float
+    most_likely_scoreline: str
+    top_scorelines: list[ScorelineProbability]
+    score_model_outcome_probabilities: ClassValues = Field(
+        description=(
+            "SECONDARY H/D/A probabilities implied by the scoreline matrix. NOT "
+            "PitchMind's primary outcome prediction - use /api/v1/predict for that."
+        )
+    )
+    scoreline_grid_max_goals: int = Field(
+        description=(
+            "Goals per side covered by the distribution. The underlying model "
+            "extends this grid until truncated tail mass is below 1e-5, then "
+            "renormalises, so the returned probabilities sum consistently."
+        )
+    )
+    model_provenance: ScoreModelProvenance
+
+
 __all__ = [
     "SourceKind",
     "DataProvenance",
     "ModelProvenance",
+    "ScoreModelProvenance",
+    "ScorelinePredictionRequest",
+    "ScorelinePredictionResponse",
+    "ScorelineProbability",
     "StandingsResponse",
     "FixturesResponse",
     "LiveMatchesResponse",

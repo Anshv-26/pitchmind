@@ -5,9 +5,10 @@ ordinary Python: it reads normalized provider data or the frozen local model
 and returns typed Pydantic responses. Nothing in this package calls an LLM,
 and nothing here fits, retrains, or persists a model.
 
-Scoreline / Dixon-Coles is deliberately absent - see the stage report: no
-Dixon-Coles artifact is persisted, so exposing it would require fitting at
-request time (which would read the sealed 2025/26 season). Deferred.
+Scoreline / Dixon-Coles is served from its own frozen artifact
+(`models/dixon_coles_l2_decay_through_2024_25.json`), loaded read-only. It
+provides expected goals and a scoreline distribution; PitchMind's PRIMARY
+H/D/A prediction remains the strength-trio classifier.
 """
 
 from backend.app.tools.football_data_tools import (
@@ -22,6 +23,11 @@ from backend.app.tools.prediction_tools import (
     get_artifact,
     run_outcome_prediction,
 )
+from backend.app.tools.scoreline_tools import (
+    TeamNotInScoreModel,
+    get_score_model_artifact,
+    get_scoreline_prediction,
+)
 from backend.app.tools.schemas import (
     ClassValues,
     DataProvenance,
@@ -34,6 +40,10 @@ from backend.app.tools.schemas import (
     OutcomeExplanationResponse,
     OutcomePredictionRequest,
     OutcomePredictionResponse,
+    ScoreModelProvenance,
+    ScorelinePredictionRequest,
+    ScorelinePredictionResponse,
+    ScorelineProbability,
     SourceKind,
     StandingsResponse,
 )
@@ -45,6 +55,9 @@ __all__ = [
     "get_live_match_state",
     "run_outcome_prediction",
     "explain_outcome_prediction",
+    "get_scoreline_prediction",
+    "get_score_model_artifact",
+    "TeamNotInScoreModel",
     "get_artifact",
     "ModelArtifactUnavailable",
     "ClassValues",
@@ -58,6 +71,10 @@ __all__ = [
     "OutcomeExplanationResponse",
     "OutcomePredictionRequest",
     "OutcomePredictionResponse",
+    "ScoreModelProvenance",
+    "ScorelinePredictionRequest",
+    "ScorelinePredictionResponse",
+    "ScorelineProbability",
     "SourceKind",
     "StandingsResponse",
 ]

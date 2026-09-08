@@ -49,8 +49,9 @@ from backend.app.services.football_data.errors import (
 from backend.app.services.football_data.models import FixtureStatus
 from backend.app.services.football_data.service import FootballDataService
 from backend.app.tools import football_data_tools as football_tools
-from backend.app.tools import prediction_tools
+from backend.app.tools import prediction_tools, scoreline_tools
 from backend.app.tools.prediction_tools import ModelArtifactUnavailable
+from backend.app.tools.scoreline_tools import TeamNotInScoreModel
 from backend.app.tools.schemas import (
     FixturesResponse,
     LiveMatchesResponse,
@@ -58,6 +59,8 @@ from backend.app.tools.schemas import (
     OutcomeExplanationResponse,
     OutcomePredictionRequest,
     OutcomePredictionResponse,
+    ScorelinePredictionRequest,
+    ScorelinePredictionResponse,
     StandingsResponse,
 )
 
@@ -136,6 +139,14 @@ def create_app() -> FastAPI:
     async def _artifact_unavailable(request: Request, exc: ModelArtifactUnavailable) -> JSONResponse:
         return _error(503, "model_artifact_unavailable", str(exc))
 
+    @app.exception_handler(TeamNotInScoreModel)
+    async def _team_not_in_score_model(request: Request, exc: TeamNotInScoreModel) -> JSONResponse:
+        # 422, not 404: the club genuinely exists and is known to PitchMind -
+        # this specific model simply has no fitted parameters for it. A 404
+        # would wrongly imply the team is unrecognised. The distinct `code`
+        # separates it from Pydantic's own 422s.
+        return _error(422, "team_not_in_score_model", str(exc))
+
     @app.exception_handler(FootballDataError)
     async def _football_data_error(request: Request, exc: FootballDataError) -> JSONResponse:
         return _error(500, "football_data_error", str(exc))
@@ -207,6 +218,22 @@ def create_app() -> FastAPI:
     async def predict_explain(request: OutcomePredictionRequest) -> OutcomeExplanationResponse:
         """Exact linear decomposition of the same prediction. No LLM, no SHAP."""
         return prediction_tools.explain_outcome_prediction(request)
+
+    @app.post(
+        f"{API_V1}/predict/scoreline",
+        response_model=ScorelinePredictionResponse,
+        tags=["model"],
+    )
+    async def predict_scoreline(request: ScorelinePredictionRequest) -> ScorelinePredictionResponse:
+        """Expected goals and scoreline distribution from the frozen
+        Dixon-Coles model.
+
+        This is PitchMind's SCORELINE model, separate from the primary
+        strength-trio H/D/A predictor at `/api/v1/predict`. The H/D/A numbers
+        it returns are labelled `score_model_outcome_probabilities` and are
+        secondary - they must not replace the primary prediction.
+        """
+        return scoreline_tools.get_scoreline_prediction(request)
 
     return app
 

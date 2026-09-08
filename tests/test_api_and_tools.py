@@ -532,17 +532,36 @@ def test_serving_layer_never_retrains_or_persists():
     assert not offenders, f"serving layer must not train or persist: {offenders}"
 
 
-def test_serving_layer_does_not_reference_the_sealed_season_as_data():
-    """The sealed season may be NAMED in provenance text (to say it has not
-    been evaluated), but must never be loaded or scored here."""
-    forbidden_imports = {
-        "backend.app.ml.training",
-        "backend.app.ml.datasets",
-        "backend.app.ml.score_models",
-    }
+def _imported_names(path: Path) -> set[str]:
+    """Names pulled in via `from X import name`, not just module paths."""
+    tree = ast.parse(path.read_text())
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names.update(alias.name for alias in node.names)
+    return names
+
+
+def test_serving_layer_cannot_reach_training_machinery():
+    """Serving may import `score_models` for INFERENCE (`predict_match`), but
+    must never import the fold/training machinery, and must never import
+    `fit_score_model` - the one function that would read the sealed season.
+
+    This guard deliberately targets the training ENTRY POINTS rather than
+    banning the module outright: inference and fitting live in the same
+    frozen module, and only fitting is dangerous.
+    """
+    forbidden_modules = {"backend.app.ml.training", "backend.app.ml.datasets"}
+    forbidden_names = {"fit_score_model", "build_features", "load_fold", "run_stage1"}
     for module_path in _serving_modules():
         modules = _imported_modules(module_path)
-        assert not (modules & forbidden_imports), f"{module_path.name} imports {modules & forbidden_imports}"
+        assert not (modules & forbidden_modules), (
+            f"{module_path.name} imports {modules & forbidden_modules}"
+        )
+        names = _imported_names(module_path)
+        assert not (names & forbidden_names), (
+            f"{module_path.name} imports training entry point(s) {names & forbidden_names}"
+        )
 
 
 def test_models_directory_is_untouched_by_serving(client):
@@ -566,13 +585,319 @@ def test_processed_data_is_untouched_by_serving(client):
     assert before == after
 
 
-def test_scoreline_tool_is_not_exposed():
-    """Dixon-Coles serving is deliberately DEFERRED - no artifact is
-    persisted, so exposing it would mean fitting at request time (which would
-    read the sealed 2025/26 season). Asserted so it cannot appear by accident."""
+def test_scoreline_serving_is_now_exposed():
+    """Dixon-Coles scoreline serving is no longer deferred: it is backed by a
+    persisted artifact and reachable through both the tool layer and the API."""
     from backend.app import tools
 
-    assert not any("scoreline" in name.lower() for name in dir(tools))
-    assert not any("dixon" in name.lower() for name in dir(tools))
+    assert hasattr(tools, "get_scoreline_prediction")
     routes = {route.path for route in app.routes}
-    assert not any("scoreline" in path or "dixon" in path for path in routes)
+    assert "/api/v1/predict/scoreline" in routes
+
+
+# --------------------------------------------------------------------------
+# 9. Dixon-Coles scoreline serving (frozen artifact, JSON-persisted)
+# --------------------------------------------------------------------------
+SCORELINE_BODY = {"home_team": "Arsenal", "away_team": "Liverpool"}
+
+
+def test_score_model_artifact_excludes_the_sealed_season():
+    """The artifact's own metadata must prove 2025/26 was never trained on."""
+    from backend.app.ml.feature_engineering import SEALED_SEASON
+    from backend.app.tools.scoreline_tools import get_score_model_artifact
+
+    meta = get_score_model_artifact().metadata
+    assert SEALED_SEASON not in meta.training_seasons
+    assert meta.training_seasons[-1] == "2024_25"
+    assert meta.training_cutoff_season == "2024_25"
+    assert meta.sealed_final_test_scored is False
+
+
+def test_score_model_artifact_training_source_has_no_sealed_rows():
+    """Data-level assertion, not just metadata: rebuilding the training frame
+    the same way the builder does must contain zero sealed-season matches."""
+    import pandas as pd
+
+    from backend.app.ml.feature_engineering import SEALED_SEASON
+    from backend.app.ml.score_model_artifact import MATCHES_PATH
+
+    frame = pd.read_parquet(MATCHES_PATH, columns=["Season"])
+    train = frame.loc[frame["Season"] != SEALED_SEASON]
+    assert SEALED_SEASON not in set(train["Season"].unique())
+    assert len(train) == 3800
+    assert len(frame) > len(train), "source genuinely contains sealed rows that must be filtered"
+
+
+def test_score_model_artifact_metadata_records_the_frozen_configuration():
+    from backend.app.tools.scoreline_tools import get_score_model_artifact
+
+    meta = get_score_model_artifact().metadata
+    assert meta.model_id == "dixon_coles_l2_decay"
+    assert meta.model_type == "dixon_coles"
+    assert meta.use_dixon_coles is True
+    assert meta.l2_sigma == pytest.approx(0.25)
+    assert meta.decay_half_life_days == pytest.approx(365.0)
+    assert meta.training_match_count == 3800
+
+
+def test_scoreline_serving_never_calls_fit_score_model(client, monkeypatch):
+    """The serving path must load, never fit."""
+    from backend.app.ml import score_models
+
+    def _forbidden_fit(*args, **kwargs):
+        raise AssertionError("serving must never call fit_score_model")
+
+    monkeypatch.setattr(score_models, "fit_score_model", _forbidden_fit)
+    assert client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY).status_code == 200
+
+
+def test_scoreline_values_match_direct_frozen_inference(client):
+    """Endpoint output must equal `predict_match` on the frozen params -
+    no re-derivation anywhere in the serving path."""
+    from backend.app.ml.score_models import predict_match
+    from backend.app.tools.scoreline_tools import get_score_model_artifact
+
+    artifact = get_score_model_artifact()
+    expected = predict_match(artifact.params, artifact.config, "Arsenal", "Liverpool")
+
+    body = client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY).json()
+    assert body["expected_home_goals"] == pytest.approx(expected.expected_home_goals, abs=1e-12)
+    assert body["expected_away_goals"] == pytest.approx(expected.expected_away_goals, abs=1e-12)
+    assert body["lambda_home"] == pytest.approx(expected.lambda_home, abs=1e-12)
+    assert body["most_likely_scoreline"] == expected.most_likely_scoreline
+
+
+def test_scoreline_inference_is_deterministic(client):
+    a = client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY).json()
+    b = client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY).json()
+    assert a == b
+
+
+def test_scoreline_top_scorelines_are_internally_consistent(client):
+    body = client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY).json()
+    top = body["top_scorelines"]
+    assert len(top) == 3
+    probabilities = [s["probability"] for s in top]
+    assert probabilities == sorted(probabilities, reverse=True), "must be ranked descending"
+    assert all(0.0 < p < 1.0 for p in probabilities)
+    # The named scoreline must agree with its own goal fields, and with the
+    # separately-reported most likely scoreline.
+    for entry in top:
+        assert entry["scoreline"] == f"{entry['home_goals']}-{entry['away_goals']}"
+    assert body["most_likely_scoreline"] == top[0]["scoreline"]
+
+
+def test_scoreline_secondary_outcome_probabilities_sum_to_one(client):
+    """The model renormalises after its truncation check, so these sum to 1."""
+    body = client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY).json()
+    probabilities = body["score_model_outcome_probabilities"]
+    total = probabilities["home"] + probabilities["draw"] + probabilities["away"]
+    assert total == pytest.approx(1.0, abs=1e-9)
+
+
+def test_scoreline_expected_goals_are_positive_and_plausible(client):
+    body = client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY).json()
+    assert 0.0 < body["expected_home_goals"] < 6.0
+    assert 0.0 < body["expected_away_goals"] < 6.0
+
+
+def test_scoreline_model_provenance_is_correct(client):
+    body = client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY).json()
+    provenance = body["model_provenance"]
+    assert provenance["model_id"] == "dixon_coles_l2_decay"
+    assert provenance["model_type"] == "dixon_coles"
+    assert provenance["training_cutoff_season"] == "2024_25"
+    assert provenance["sealed_final_test_completed"] is False
+    assert provenance["l2_sigma"] == pytest.approx(0.25)
+    assert provenance["decay_half_life_days"] == pytest.approx(365.0)
+    # Must not be mistakable for the primary H/D/A model.
+    assert "strength-trio" in provenance["usage_note"]
+
+
+def test_scoreline_resolves_team_aliases_to_fitted_model_keys(client):
+    """Canonical identity maps provider/modern spellings onto the historical
+    keys the fitted model is actually keyed on."""
+    body = client.post(
+        "/api/v1/predict/scoreline",
+        json={"home_team": "Manchester City", "away_team": "Nottingham Forest"},
+    ).json()
+    assert body["home_team_model_key"] == "Man City"
+    assert body["away_team_model_key"] == "Nott'm Forest"
+    assert body["home_team"] == "Manchester City"
+
+
+def test_scoreline_refuses_current_only_club_rather_than_fabricating(client):
+    """Coventry City is a real current PL club with NO fitted parameters. It
+    must error, not receive a promoted-prior-derived fabricated prediction."""
+    response = client.post(
+        "/api/v1/predict/scoreline", json={"home_team": "Coventry City", "away_team": "Arsenal"}
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "team_not_in_score_model"
+
+
+def test_scoreline_unknown_club_is_404_distinct_from_unfitted_club(client):
+    """Two different failures must stay distinguishable."""
+    response = client.post(
+        "/api/v1/predict/scoreline", json={"home_team": "Wrexham", "away_team": "Arsenal"}
+    )
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "unknown_team"
+
+
+def test_scoreline_tool_does_not_use_the_promoted_prior():
+    """Direct tool-level proof: the promoted-prior fallback that exists in the
+    frozen model is deliberately not reachable through serving."""
+    from backend.app.tools.scoreline_tools import (
+        TeamNotInScoreModel,
+        get_score_model_artifact,
+        get_scoreline_prediction,
+    )
+    from backend.app.tools.schemas import ScorelinePredictionRequest
+
+    artifact = get_score_model_artifact()
+    # The frozen params WOULD happily return a promoted-prior value...
+    assert artifact.params.team_attack("Coventry City") == pytest.approx(
+        artifact.params.promoted_attack_offset
+    )
+    # ...but serving refuses instead.
+    with pytest.raises(TeamNotInScoreModel):
+        get_scoreline_prediction(
+            ScorelinePredictionRequest(home_team="Coventry City", away_team="Arsenal")
+        )
+
+
+def test_scoreline_rejects_extra_fields(client):
+    response = client.post(
+        "/api/v1/predict/scoreline", json={**SCORELINE_BODY, "possession": 60.0}
+    )
+    assert response.status_code == 422
+
+
+def test_scoreline_top_n_is_honoured_within_the_models_real_ceiling(client):
+    body = client.post(
+        "/api/v1/predict/scoreline", json={**SCORELINE_BODY, "top_n": 2}
+    ).json()
+    assert len(body["top_scorelines"]) == 2
+    # Above the frozen model's real ceiling of 3 is rejected, not silently truncated.
+    assert client.post(
+        "/api/v1/predict/scoreline", json={**SCORELINE_BODY, "top_n": 9}
+    ).status_code == 422
+
+
+def test_missing_score_model_artifact_maps_to_503(client, monkeypatch):
+    from backend.app.tools import scoreline_tools
+
+    def _missing(*args, **kwargs):
+        raise prediction_tools.ModelArtifactUnavailable("score artifact missing")
+
+    monkeypatch.setattr(scoreline_tools, "get_score_model_artifact", _missing)
+    response = client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "model_artifact_unavailable"
+
+
+def test_scoreline_does_not_affect_primary_prediction_endpoint(client):
+    """The two models are independent; calling one must not perturb the other."""
+    before = client.post("/api/v1/predict", json=PREDICT_BODY).json()
+    client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY)
+    after = client.post("/api/v1/predict", json=PREDICT_BODY).json()
+    assert before == after
+
+
+def test_scoreline_primary_and_secondary_probabilities_are_separately_labelled(client):
+    """The score model's H/D/A must never be presented as the primary one."""
+    primary = client.post("/api/v1/predict", json=PREDICT_BODY).json()
+    scoreline = client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY).json()
+    assert "home_win_probability" in primary
+    assert "home_win_probability" not in scoreline
+    assert "score_model_outcome_probabilities" in scoreline
+    assert "score_model_outcome_probabilities" not in primary
+
+
+def test_scoreline_inference_does_not_modify_processed_data_or_models(client):
+    processed = REPO_ROOT / "data" / "processed"
+    models_dir = REPO_ROOT / "models"
+    before_processed = {p.name: p.stat().st_mtime for p in processed.iterdir()}
+    before_models = {p.name: p.stat().st_mtime for p in models_dir.iterdir()}
+    client.post("/api/v1/predict/scoreline", json=SCORELINE_BODY)
+    assert {p.name: p.stat().st_mtime for p in processed.iterdir()} == before_processed
+    assert {p.name: p.stat().st_mtime for p in models_dir.iterdir()} == before_models
+
+
+def test_score_model_artifact_is_plain_json_not_a_pickle():
+    """Transparent, inspectable, no arbitrary-code-execution on load."""
+    import json
+
+    from backend.app.ml.score_model_artifact import SCORE_MODEL_ARTIFACT_PATH
+
+    payload = json.loads(SCORE_MODEL_ARTIFACT_PATH.read_text())
+    assert set(payload) == {"metadata", "config", "params"}
+    assert payload["params"]["config_id"] == "dixon_coles_l2_decay"
+    assert isinstance(payload["params"]["attack"], dict)
+
+
+def test_score_model_artifact_round_trips_exactly(tmp_path):
+    from backend.app.ml.score_model_artifact import (
+        load_score_model_artifact,
+        save_score_model_artifact,
+    )
+    from backend.app.tools.scoreline_tools import get_score_model_artifact
+
+    original = get_score_model_artifact()
+    path = tmp_path / "artifact.json"
+    save_score_model_artifact(original, path=path)
+    reloaded = load_score_model_artifact(path=path)
+    assert reloaded.params == original.params
+    assert reloaded.config == original.config
+    assert reloaded.metadata == original.metadata
+
+
+def test_score_model_artifact_with_sealed_season_in_metadata_fails_loudly(tmp_path):
+    import dataclasses
+    import json
+
+    from backend.app.ml.feature_engineering import SEALED_SEASON
+    from backend.app.ml.score_model_artifact import load_score_model_artifact
+    from backend.app.tools.scoreline_tools import get_score_model_artifact
+
+    original = get_score_model_artifact()
+    bad_metadata = dataclasses.replace(
+        original.metadata, training_seasons=[*original.metadata.training_seasons, SEALED_SEASON]
+    )
+    path = tmp_path / "bad.json"
+    path.write_text(
+        json.dumps(
+            {
+                "metadata": dataclasses.asdict(bad_metadata),
+                "config": {
+                    "config_id": original.config.config_id,
+                    "use_dixon_coles": original.config.use_dixon_coles,
+                    "l2_sigma": original.config.l2_sigma,
+                    "half_life_days": original.config.half_life_days,
+                },
+                "params": {
+                    "config_id": original.params.config_id,
+                    "teams": list(original.params.teams),
+                    "intercept": original.params.intercept,
+                    "home_advantage": original.params.home_advantage,
+                    "attack": original.params.attack,
+                    "defence": original.params.defence,
+                    "rho": original.params.rho,
+                    "promoted_attack_offset": original.params.promoted_attack_offset,
+                    "promoted_defence_offset": original.params.promoted_defence_offset,
+                },
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="sealed season"):
+        load_score_model_artifact(path=path)
+
+
+def test_build_script_takes_no_training_data_arguments():
+    """No parameter through which a caller could widen the training window."""
+    import inspect
+
+    from backend.app.ml.score_model_artifact import build_score_model_artifact
+
+    assert list(inspect.signature(build_score_model_artifact).parameters) == []

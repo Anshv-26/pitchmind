@@ -26,6 +26,7 @@ actionable message without it.
 | GET | `/api/v1/live/matches/{provider_fixture_id}` | One match's live state |
 | POST | `/api/v1/predict` | H/D/A probabilities from the frozen model |
 | POST | `/api/v1/predict/explain` | Exact contribution breakdown for that prediction |
+| POST | `/api/v1/predict/scoreline` | Expected goals + scoreline distribution (Dixon-Coles) |
 
 ```bash
 curl localhost:8000/health
@@ -34,6 +35,9 @@ curl localhost:8000/api/v1/live/matches
 curl -X POST localhost:8000/api/v1/predict \
      -H 'content-type: application/json' \
      -d '{"elo_diff": 85.0, "diff_ewma_ppg": 0.42, "diff_ewma_sot_diff": 1.3}'
+curl -X POST localhost:8000/api/v1/predict/scoreline \
+     -H 'content-type: application/json' \
+     -d '{"home_team": "Arsenal", "away_team": "Liverpool"}'
 ```
 
 Interactive docs at `http://localhost:8000/docs` once running.
@@ -50,6 +54,13 @@ was trained through 2024/25 and the sealed 2025/26 final test has not been run.
 Every prediction response carries `model_provenance.sealed_final_test_completed
 = false`. The endpoint scores a caller-supplied pre-kickoff feature snapshot; it
 never builds current-season features and never retrains.
+
+**Two models, deliberately separate.** `/api/v1/predict` serves the
+strength-trio classifier — PitchMind's **primary** H/D/A prediction.
+`/api/v1/predict/scoreline` serves the frozen Dixon-Coles model for expected
+goals and scorelines; the H/D/A numbers it also returns are labelled
+`score_model_outcome_probabilities` and are **secondary**. Both artifacts are
+trained through 2024/25 and loaded read-only; neither endpoint ever fits.
 
 ## Architecture
 
