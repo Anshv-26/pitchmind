@@ -227,9 +227,106 @@ class RoutingResult(_Base):
     plan: ExecutionPlan
 
 
+# --------------------------------------------------------------------------
+# Stage 2: evidence produced by executing deterministic tools
+# --------------------------------------------------------------------------
+class EvidenceKind(str, Enum):
+    """What sort of deterministic output an evidence item holds.
+
+    Kept coarse on purpose: it exists so later stages can ask "is this a model
+    number or a data reading?" without inspecting payload shape.
+    """
+
+    CURRENT_DATA = "CURRENT_DATA"
+    LIVE_STATE = "LIVE_STATE"
+    MODEL_PREDICTION = "MODEL_PREDICTION"
+    MODEL_EXPLANATION = "MODEL_EXPLANATION"
+    SCORE_MODEL = "SCORE_MODEL"
+
+
+class ToolErrorCode(str, Enum):
+    """Typed, distinguishable failure reasons.
+
+    Expected application errors keep their identity here instead of collapsing
+    into "something went wrong", so a later orchestrator can degrade
+    intelligently (e.g. continue without live data, but not without a model).
+    """
+
+    UNKNOWN_TOOL = "UNKNOWN_TOOL"
+    INVALID_ARGUMENTS = "INVALID_ARGUMENTS"
+    SERVICE_NOT_CONFIGURED = "SERVICE_NOT_CONFIGURED"
+    UNKNOWN_TEAM = "UNKNOWN_TEAM"
+    PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
+    PROVIDER_RATE_LIMITED = "PROVIDER_RATE_LIMITED"
+    UNSUPPORTED_CAPABILITY = "UNSUPPORTED_CAPABILITY"
+    MALFORMED_PROVIDER_PAYLOAD = "MALFORMED_PROVIDER_PAYLOAD"
+    CURRENT_SEASON_NOT_AVAILABLE = "CURRENT_SEASON_NOT_AVAILABLE"
+    MODEL_ARTIFACT_UNAVAILABLE = "MODEL_ARTIFACT_UNAVAILABLE"
+    TEAM_NOT_IN_SCORE_MODEL = "TEAM_NOT_IN_SCORE_MODEL"
+
+
+class EvidenceItem(_Base):
+    """One successfully executed deterministic result.
+
+    `payload` is the tool's own response serialized to JSON - including its
+    ORIGINAL provenance object, unflattened. Nothing here re-derives or
+    reformats a number, so Stage 3's grounding validator can match answer text
+    against real tool output.
+
+    `source_kind` and `is_stale` are lifted to the top purely as hot fields
+    every later stage must check; the authoritative provenance stays in
+    `payload`. No parallel provenance type is invented.
+    """
+
+    evidence_id: str = Field(min_length=2)
+    tool_name: ToolName
+    evidence_kind: EvidenceKind
+    args: dict[str, object] = Field(default_factory=dict)
+    payload: dict[str, object]
+    source_kind: str
+    is_stale: bool = False
+    dedup_key: str = Field(min_length=1)
+
+    @property
+    def is_replay(self) -> bool:
+        """True when this came from the deterministic replay provider.
+
+        Exposed explicitly so no later stage can present simulated live data
+        as real current football.
+        """
+        return self.source_kind == "REPLAY"
+
+
+class ToolFailure(_Base):
+    """A tool call that did not succeed. Never stored as evidence."""
+
+    tool_name: ToolName | None
+    error_code: ToolErrorCode
+    message: str
+    dedup_key: str | None = None
+
+
+class ToolExecutionResult(_Base):
+    """Outcome of one ToolExecutor call.
+
+    Expected application failures are returned structurally rather than
+    raised, so an orchestrator can gather partial evidence without wrapping
+    every call in try/except. Genuinely unexpected exceptions still propagate
+    - masking a programming error would be worse than failing loudly.
+    """
+
+    ok: bool
+    evidence: EvidenceItem | None = None
+    failure: ToolFailure | None = None
+    deduplicated: bool = False
+    """True when this reused an identical earlier call within the same request."""
+
+
 __all__ = [
     "AMBIGUITY_CODES",
     "CapabilityStatus",
+    "EvidenceItem",
+    "EvidenceKind",
     "ExecutionPlan",
     "ExecutionTier",
     "Intent",
@@ -239,5 +336,8 @@ __all__ = [
     "RoutingGateCriteria",
     "RoutingResult",
     "SpecialistName",
+    "ToolErrorCode",
+    "ToolExecutionResult",
+    "ToolFailure",
     "ToolName",
 ]

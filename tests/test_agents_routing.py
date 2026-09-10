@@ -495,8 +495,20 @@ def test_classifier_returns_no_intent_rather_than_guessing():
 # --------------------------------------------------------------------------
 # 21-23. Structural safety
 # --------------------------------------------------------------------------
-def _stage1_modules() -> list[Path]:
+def _agent_modules() -> list[Path]:
+    """Every module in the agent package (Stage 1 routing + Stage 2 executor)."""
     return sorted(AGENTS_DIR.glob("*.py"))
+
+
+# The ROUTING modules specifically. `executor.py` is deliberately excluded from
+# the "must not execute" guard below: executing approved deterministic tools is
+# precisely its job. Package-wide guards (no LLM imports, no training imports,
+# no sealed season) still cover it, and Stage 2's own test file adds more.
+ROUTING_MODULE_NAMES = {"__init__.py", "contracts.py", "intents.py", "planner.py"}
+
+
+def _routing_modules() -> list[Path]:
+    return [p for p in _agent_modules() if p.name in ROUTING_MODULE_NAMES]
 
 
 def _imported_modules(path: Path) -> set[str]:
@@ -521,7 +533,7 @@ def test_stage1_imports_no_ml_training_or_artifact_machinery():
         "backend.app.ml.baselines",
         "backend.app.ml.calibration",
     )
-    for module_path in _stage1_modules():
+    for module_path in _agent_modules():
         for imported in _imported_modules(module_path):
             assert not imported.startswith(forbidden_prefixes), f"{module_path.name}: {imported}"
 
@@ -530,25 +542,28 @@ def test_stage1_imports_no_llm_or_network_libraries():
     """Direct imports only; a transitive package __init__ is out of scope."""
     forbidden = ("anthropic", "claude", "claude_agent_sdk", "httpx", "requests", "urllib", "socket",
                  "openai", "langchain", "langgraph", "crewai", "autogen")
-    for module_path in _stage1_modules():
+    for module_path in _agent_modules():
         for imported in _imported_modules(module_path):
             root = imported.split(".")[0].lower()
             assert root not in forbidden, f"{module_path.name} imports {imported}"
 
 
 def test_stage1_never_references_the_sealed_season():
-    for module_path in _stage1_modules():
+    for module_path in _agent_modules():
         assert "2025_26" not in module_path.read_text(), module_path.name
 
 
-def test_stage1_executes_nothing():
-    """Stage 1 plans; it must not call any tool or execute a model."""
+def test_routing_layer_executes_nothing():
+    """The routing/planning layer plans; it must not call any tool or model.
+
+    Scoped to the routing modules - `executor.py` exists to execute approved
+    tools, so including it here would forbid its entire purpose."""
     forbidden_calls = {
         "run_outcome_prediction", "explain_outcome_prediction", "get_scoreline_prediction",
         "get_current_standings", "get_fixtures", "get_live_matches", "get_live_match_state",
         "predict_proba", "fit", "query",
     }
-    for module_path in _stage1_modules():
+    for module_path in _routing_modules():
         tree = ast.parse(module_path.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
@@ -567,10 +582,13 @@ def test_stage1_makes_no_network_calls(monkeypatch):
         route_and_plan(question)
 
 
-def test_stage1_package_contains_only_the_approved_modules():
-    assert {p.name for p in _stage1_modules()} == {
+def test_agent_package_contains_only_the_approved_modules():
+    """Stages 1-2 only. Stage 3+ modules (grounding, runtime, critic, trace,
+    orchestrator) must not have appeared yet."""
+    assert {p.name for p in _agent_modules()} == {
         "__init__.py",
         "contracts.py",
+        "executor.py",
         "intents.py",
         "planner.py",
     }
